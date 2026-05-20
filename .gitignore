@@ -1,0 +1,21 @@
+target/
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# Local environment & secrets — never commit
+.env
+.env.local
+wallet/
+!wallet/.gitkeep
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
