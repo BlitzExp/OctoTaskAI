@@ -21,9 +21,18 @@ fi
 BASE_URL="${1%/}"
 WEBHOOK_URL="${BASE_URL}/api/telegram/webhook"
 
+# If TELEGRAM_WEBHOOK_SECRET is set, register it so Telegram echoes it back in the
+# X-Telegram-Bot-Api-Secret-Token header (the service validates it). Use the same
+# value for the service's TELEGRAM_WEBHOOK_SECRET env var.
+if [[ -n "${TELEGRAM_WEBHOOK_SECRET:-}" ]]; then
+  PAYLOAD="{\"url\":\"${WEBHOOK_URL}\",\"secret_token\":\"${TELEGRAM_WEBHOOK_SECRET}\"}"
+else
+  PAYLOAD="{\"url\":\"${WEBHOOK_URL}\"}"
+fi
+
 echo "Registering webhook: ${WEBHOOK_URL}"
 curl -sS -X POST \
   "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
   -H "Content-Type: application/json" \
-  -d "{\"url\":\"${WEBHOOK_URL}\"}"
+  -d "${PAYLOAD}"
 echo

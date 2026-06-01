@@ -3,6 +3,7 @@ package com.octotask.bot.data;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 import javax.sql.DataSource;
@@ -24,11 +25,46 @@ public class SemanticRoutingRepository {
     private static final Logger log = LoggerFactory.getLogger(SemanticRoutingRepository.class);
 
     private final DataSource vectorDataSource;
+    private final JdbcTemplate jdbc;
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     public SemanticRoutingRepository(DataSource vectorDataSource) {
         this.vectorDataSource = vectorDataSource;
+        this.jdbc = new JdbcTemplate(vectorDataSource);
+    }
+
+    /**
+     * Search returning each route's cosine distance, so callers can apply a
+     * confidence threshold. Uses TO_VECTOR(json) which works without native
+     * VECTOR array binding.
+     */
+    public List<RouteMatch> searchWithDistance(float[] embedding, int k) {
+        final String json;
+        try {
+            json = OBJECT_MAPPER.writeValueAsString(boxToDoubleArray(embedding));
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException("Failed to serialize embedding to JSON", e);
+        }
+        String sql = "SELECT id, descripcion_texto, funcion_backend, fecha_creacion, " +
+                "       VECTOR_DISTANCE(descripcion_vector, TO_VECTOR(?), COSINE) AS dist " +
+                "FROM rutas_semanticas " +
+                "ORDER BY dist ASC " +
+                "FETCH FIRST ? ROWS ONLY";
+        return jdbc.query(sql, (rs, n) -> {
+            Timestamp ts = rs.getTimestamp("fecha_creacion");
+            SemanticRoute route = new SemanticRoute(
+                    rs.getInt("id"),
+                    rs.getString("descripcion_texto"),
+                    rs.getString("funcion_backend"),
+                    ts != null ? ts.toLocalDateTime() : null);
+            return new RouteMatch(route, rs.getDouble("dist"));
+        }, json, k);
+    }
+
+    public long count() {
+        Long n = jdbc.queryForObject("SELECT COUNT(*) FROM rutas_semanticas", Long.class);
+        return n == null ? 0 : n;
     }
 
     public int insertRoute(String text, float[] embedding, String backend) throws SQLException {

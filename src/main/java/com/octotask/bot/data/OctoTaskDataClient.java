@@ -1,5 +1,6 @@
 package com.octotask.bot.data;
 
+import com.octotask.bot.data.model.AppUser;
 import com.octotask.bot.data.model.CreateTask;
 import com.octotask.bot.data.model.Task;
 
@@ -12,6 +13,10 @@ import java.util.Map;
  * replace this without touching any tool.
  */
 public interface OctoTaskDataClient {
+
+    // --- Identity ---
+    /** Look up an APP_USER by (case-insensitive) name for login linking; null if not found. */
+    AppUser findUserByName(String name);
 
     // --- Reads ---
     List<Task> getTasksByTeamId(int teamId);

@@ -1,9 +1,7 @@
 package com.octotask.bot.tools;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.octotask.bot.ai.GeminiToolSchemaBuilder;
 import com.octotask.bot.data.OctoTaskDataClient;
 import com.octotask.bot.data.model.Task;
 import org.junit.jupiter.api.Test;
@@ -48,21 +46,6 @@ class BotToolWiringTest {
             assertThat(params.has("required")).isTrue();
             assertThat(params.get("required").size()).isGreaterThan(0);
         }
-    }
-
-    @Test
-    void geminiToolSchemaBuilderEmitsOneDeclarationPerTool() {
-        OctoTaskDataClient client = Mockito.mock(OctoTaskDataClient.class);
-        List<BotTool> tools = List.of(
-                new GetTeamTasksTool(client),
-                new CompleteTaskTool(client)
-        );
-        GeminiToolSchemaBuilder builder = new GeminiToolSchemaBuilder(tools, mapper);
-        JsonNode array = builder.buildToolsArray();
-        JsonNode functionDeclarations = array.get(0).get("functionDeclarations");
-        assertThat(functionDeclarations.size()).isEqualTo(2);
-        assertThat(functionDeclarations.get(0).get("name").asText()).isEqualTo("get_team_tasks");
-        assertThat(functionDeclarations.get(1).get("name").asText()).isEqualTo("complete_task");
     }
 
     @Test

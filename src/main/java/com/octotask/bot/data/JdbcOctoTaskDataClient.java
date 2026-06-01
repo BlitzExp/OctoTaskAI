@@ -1,6 +1,7 @@
 package com.octotask.bot.data;
 
 import com.octotask.bot.data.mapper.TaskRowMapper;
+import com.octotask.bot.data.model.AppUser;
 import com.octotask.bot.data.model.CreateTask;
 import com.octotask.bot.data.model.Task;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -22,6 +23,21 @@ public class JdbcOctoTaskDataClient implements OctoTaskDataClient {
 
     public JdbcOctoTaskDataClient(DataSource dataSource) {
         this.jdbc = new JdbcTemplate(dataSource);
+    }
+
+    // -----------------------------------------------------------------
+    //  Identity
+    // -----------------------------------------------------------------
+
+    @Override
+    public AppUser findUserByName(String name) {
+        String sql = "SELECT id, name, team_id FROM APP_USER WHERE LOWER(name) = LOWER(?) FETCH FIRST 1 ROWS ONLY";
+        List<AppUser> users = jdbc.query(sql, (rs, n) -> {
+            int teamId = rs.getInt("team_id");
+            Integer team = rs.wasNull() ? null : teamId;
+            return new AppUser(rs.getInt("id"), rs.getString("name"), team);
+        }, name);
+        return users.isEmpty() ? null : users.get(0);
     }
 
     // -----------------------------------------------------------------
