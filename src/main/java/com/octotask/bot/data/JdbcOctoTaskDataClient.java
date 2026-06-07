@@ -40,6 +40,16 @@ public class JdbcOctoTaskDataClient implements OctoTaskDataClient {
         return users.isEmpty() ? null : users.get(0);
     }
 
+    @Override
+    public List<AppUser> listUsers() {
+        String sql = "SELECT id, name, team_id FROM APP_USER ORDER BY id";
+        return jdbc.query(sql, (rs, n) -> {
+            int teamId = rs.getInt("team_id");
+            Integer team = rs.wasNull() ? null : teamId;
+            return new AppUser(rs.getInt("id"), rs.getString("name"), team);
+        });
+    }
+
     // -----------------------------------------------------------------
     //  Reads
     // -----------------------------------------------------------------

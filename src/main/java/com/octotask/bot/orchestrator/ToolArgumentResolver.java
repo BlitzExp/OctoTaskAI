@@ -50,6 +50,21 @@ public class ToolArgumentResolver {
     }
 
     public Resolution resolve(BotTool tool, BotUserLink identity, String userText) {
+        return resolve(tool, identity, userText, null, null);
+    }
+
+    public Resolution resolve(BotTool tool, BotUserLink identity, String userText, String conversationContext) {
+        return resolve(tool, identity, userText, conversationContext, null);
+    }
+
+    /**
+     * @param seedArgs arguments already collected on a previous turn (multi-turn
+     *                 slot filling). Fields already present are kept and not
+     *                 re-extracted; only the still-missing ones are pulled from
+     *                 the latest {@code userText}. Pass {@code null} for a fresh start.
+     */
+    public Resolution resolve(BotTool tool, BotUserLink identity, String userText,
+                              String conversationContext, ObjectNode seedArgs) {
         ObjectNode schema = mapper.createObjectNode();
         tool.buildParameters(schema);
         JsonNode properties = schema.path("properties");
@@ -58,7 +73,9 @@ public class ToolArgumentResolver {
             schema.get("required").forEach(n -> required.add(n.asText()));
         }
 
-        ObjectNode args = mapper.createObjectNode();
+        // Start from anything we already collected on prior turns, so the user
+        // doesn't have to repeat fields they've already given.
+        ObjectNode args = seedArgs != null ? seedArgs.deepCopy() : mapper.createObjectNode();
 
         // 1) identity injection by convention
         injectIdentity(args, properties, identity);
@@ -73,7 +90,7 @@ public class ToolArgumentResolver {
 
         // 3) LLM extraction for the remaining fields
         if (!toExtract.isEmpty() && llm != null && llm.isAvailable()) {
-            extractWithLlm(args, properties, toExtract, userText);
+            extractWithLlm(args, properties, toExtract, userText, conversationContext);
         }
 
         // 4) which required fields are still missing?
@@ -97,7 +114,8 @@ public class ToolArgumentResolver {
         }
     }
 
-    private void extractWithLlm(ObjectNode args, JsonNode properties, List<String> fields, String userText) {
+    private void extractWithLlm(ObjectNode args, JsonNode properties, List<String> fields,
+                                String userText, String conversationContext) {
         StringBuilder fieldSpec = new StringBuilder();
         for (String f : fields) {
             JsonNode prop = properties.get(f);
@@ -106,10 +124,27 @@ public class ToolArgumentResolver {
             fieldSpec.append("- ").append(f).append(" (").append(type).append("): ").append(desc).append("\n");
         }
         String system = "You extract structured fields from a user's message. " +
+                "Use the prior conversation only to resolve references in the latest message " +
+                "(e.g. a value the bot just asked for). " +
                 "Return ONLY a minified JSON object with the requested fields. " +
-                "Omit any field you cannot determine from the message — never guess. " +
-                "Use numbers for INTEGER/NUMBER fields.";
-        String prompt = "Fields to extract:\n" + fieldSpec + "\nUser message: \"" + userText + "\"\nJSON:";
+                "STRICT RULES: " +
+                "Include a field ONLY if the user EXPLICITLY stated its value. " +
+                "If a value was not given, OMIT the field entirely — never guess, never infer. " +
+                "NEVER use a word from the command itself as a value: e.g. for 'crea una tarea' the " +
+                "task name is NOT 'tarea'/'task'/'una tarea' — it is simply missing. " +
+                "Use numbers for INTEGER/NUMBER fields.\n" +
+                "Examples:\n" +
+                "Fields: name (STRING), sprintId (INTEGER)\n" +
+                "User message: \"crea una tarea\"\nJSON: {}\n" +
+                "Fields: name (STRING), sprintId (INTEGER), priority (INTEGER)\n" +
+                "User message: \"crea una tarea llamada Arreglar login en el sprint 3 prioridad 1\"\n" +
+                "JSON: {\"name\":\"Arreglar login\",\"sprintId\":3,\"priority\":1}\n" +
+                "Fields: name (STRING), sprintId (INTEGER)\n" +
+                "User message: \"sprint 5 y prioridad 2\"\nJSON: {\"sprintId\":5}";
+        String history = (conversationContext == null || conversationContext.isBlank())
+                ? "" : "Prior conversation:\n" + conversationContext + "\n";
+        String prompt = history + "Fields to extract:\n" + fieldSpec +
+                "\nUser message: \"" + userText + "\"\nJSON:";
 
         String raw = llm.generate(system, prompt);
         if (raw == null) return;
@@ -129,9 +164,30 @@ public class ToolArgumentResolver {
                     if (value.isNumber()) args.put(f, value.asDouble());
                     else if (value.isTextual() && value.asText().matches("-?\\d+(\\.\\d+)?")) args.put(f, Double.parseDouble(value.asText()));
                 }
-                default -> args.put(f, value.asText());
+                default -> {
+                    String text = value.asText();
+                    // Safety net: a small model sometimes echoes the command verb as the
+                    // task name ("crea una tarea" -> name="tarea"). Reject such generic
+                    // values so the field stays missing and the bot asks for it.
+                    if (isGenericNoise(text)) {
+                        log.debug("Dropping generic extracted value for field '{}': '{}'", f, text);
+                    } else {
+                        args.put(f, text);
+                    }
+                }
             }
         }
+    }
+
+    private static final java.util.Set<String> GENERIC_NOISE = java.util.Set.of(
+            "tarea", "tareas", "una tarea", "nueva tarea", "la tarea",
+            "task", "a task", "new task", "the task");
+
+    /** True if the text is just a filler/command word, not a real user-supplied value. */
+    private static boolean isGenericNoise(String text) {
+        if (text == null) return true;
+        String t = text.trim().toLowerCase();
+        return t.isEmpty() || GENERIC_NOISE.contains(t);
     }
 
     /** Pull the first {...} block out of an LLM response and parse it. */

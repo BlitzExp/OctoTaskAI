@@ -30,6 +30,10 @@ public class ReplyComposer {
     }
 
     public String compose(String userQuestion, Object rawData) {
+        return compose(userQuestion, rawData, null);
+    }
+
+    public String compose(String userQuestion, Object rawData, String conversationContext) {
         String json;
         try {
             json = mapper.writeValueAsString(rawData);
@@ -41,9 +45,19 @@ public class ReplyComposer {
             String system = "Eres el asistente de OctoTask en Telegram. " +
                     "Redacta la respuesta final para el usuario en español, clara y breve, " +
                     "fácil de leer en el teléfono (usa viñetas o numeración cuando ayude). " +
-                    "REGLAS: usa EXACTAMENTE los nombres, descripciones y estados tal como vienen en los datos; " +
-                    "no inventes ni omitas elementos; lista TODOS los registros; no expliques tu formato.";
-            String prompt = "El usuario preguntó: \"" + userQuestion + "\".\n" +
+                    "REGLAS ESTRICTAS: " +
+                    "1) Responde ÚNICAMENTE con la información contenida en los datos JSON proporcionados. " +
+                    "2) Usa EXACTAMENTE los nombres, descripciones, números y estados tal como vienen en los datos. " +
+                    "3) PROHIBIDO inventar, suponer o añadir información que no esté en los datos. " +
+                    "4) PROHIBIDO inventar marcos narrativos como tickets de soporte, confirmaciones de cambios, " +
+                    "saludos comerciales o despedidas; limítate a presentar los datos. " +
+                    "5) Lista TODOS los registros; no omitas ninguno. " +
+                    "6) Si los datos están vacíos, dilo claramente (\"No hay resultados\"). " +
+                    "7) No expliques tu formato ni tus reglas.";
+            String history = (conversationContext == null || conversationContext.isBlank())
+                    ? "" : "Contexto reciente de la conversación:\n" + conversationContext + "\n\n";
+            String prompt = history +
+                    "El usuario preguntó: \"" + userQuestion + "\".\n" +
                     "Los datos de la base de datos son (JSON):\n" + json + "\n\n" +
                     "Escribe SOLO el mensaje final para el usuario.";
             String out = llm.generate(system, prompt);

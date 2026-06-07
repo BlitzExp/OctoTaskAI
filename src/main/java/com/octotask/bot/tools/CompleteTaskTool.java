@@ -41,4 +41,13 @@ public class CompleteTaskTool implements BotTool {
         client.markTaskCompleted(taskId);
         return "SUCCESS: Task " + taskId + " has been marked as completed.";
     }
+
+    @Override
+    public String successMessage(Object result) {
+        if (result instanceof String s && s.startsWith("SUCCESS")) {
+            String id = s.replaceAll("\\D+", "");
+            return "✅ Tarea " + id + " marcada como completada.";
+        }
+        return null;
+    }
 }

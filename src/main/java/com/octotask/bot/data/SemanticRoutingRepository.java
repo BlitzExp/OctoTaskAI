@@ -67,6 +67,11 @@ public class SemanticRoutingRepository {
         return n == null ? 0 : n;
     }
 
+    /** Remove every route. Used by the reset-and-reseed path. Returns rows deleted. */
+    public int deleteAll() {
+        return jdbc.update("DELETE FROM rutas_semanticas");
+    }
+
     public int insertRoute(String text, float[] embedding, String backend) throws SQLException {
         try (Connection conn = vectorDataSource.getConnection()) {
             Array arr = tryCreateFloatArray(conn, embedding);

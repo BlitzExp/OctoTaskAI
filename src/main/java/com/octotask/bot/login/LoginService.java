@@ -1,5 +1,6 @@
 package com.octotask.bot.login;
 
+import com.octotask.bot.data.BotLoginCodeRepository;
 import com.octotask.bot.data.BotUserLink;
 import com.octotask.bot.data.BotUserLinkRepository;
 import com.octotask.bot.data.OctoTaskDataClient;
@@ -24,13 +25,17 @@ public class LoginService {
 
     private final OctoTaskDataClient data;
     private final BotUserLinkRepository links;
+    private final BotLoginCodeRepository loginCodes;
 
     @Value("${bot.login.access-code:}")
     private String accessCode;
 
-    public LoginService(OctoTaskDataClient data, Optional<BotUserLinkRepository> links) {
+    public LoginService(OctoTaskDataClient data,
+                        Optional<BotUserLinkRepository> links,
+                        Optional<BotLoginCodeRepository> loginCodes) {
         this.data = data;
         this.links = links.orElse(null);
+        this.loginCodes = loginCodes.orElse(null);
     }
 
     public boolean linkingAvailable() {
@@ -51,11 +56,28 @@ public class LoginService {
             return "El inicio de sesión no está disponible (base de datos de vínculos no configurada).";
         }
         String args = argsAfterCommand == null ? "" : argsAfterCommand.trim();
-        String[] parts = args.split("\\s+", 2);
-        if (args.isEmpty() || parts.length < 2) {
-            return "Para iniciar sesión envía:\n/login <código de acceso> <tu nombre>\n" +
-                   "Ejemplo: /login " + (accessCode == null || accessCode.isBlank() ? "CODIGO" : "CODIGO") + " Diego Pérez";
+        if (args.isEmpty()) {
+            return "Para iniciar sesión envía tu código personal:\n/login <tu código>\n" +
+                   "Ejemplo: /login ABC234";
         }
+        String[] parts = args.split("\\s+", 2);
+
+        // --- Preferred: per-user personal code (single token, no name) ---
+        // Removes the shared access code and the impersonation risk of name login.
+        if (parts.length == 1 && loginCodes != null) {
+            String personalCode = parts[0].trim();
+            AppUser byCode = loginCodes.findByCode(personalCode);
+            if (byCode != null) {
+                links.upsert(new BotUserLink(chatId, byCode.getId(), byCode.getName(), byCode.getTeamId()));
+                log.info("Linked chatId={} to appUserId={} ({}) via personal code", chatId, byCode.getId(), byCode.getName());
+                return "¡Listo, " + byCode.getName() + "! Tu cuenta quedó vinculada. " +
+                       "Ya puedes pedirme tus tareas, KPIs, crear tareas y más.";
+            }
+            return "Código personal no válido. Pídele a tu administrador tu código de OctoTask " +
+                   "y envía:\n/login <tu código>";
+        }
+
+        // --- Legacy fallback: shared access code + name ---
         String code = parts[0];
         String name = parts[1].trim();
 

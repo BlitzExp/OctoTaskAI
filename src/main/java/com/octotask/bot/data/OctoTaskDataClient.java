@@ -18,6 +18,9 @@ public interface OctoTaskDataClient {
     /** Look up an APP_USER by (case-insensitive) name for login linking; null if not found. */
     AppUser findUserByName(String name);
 
+    /** All APP_USERs, used to seed per-user login codes. */
+    List<AppUser> listUsers();
+
     // --- Reads ---
     List<Task> getTasksByTeamId(int teamId);
     List<Task> getTasksByUserName(String userName);

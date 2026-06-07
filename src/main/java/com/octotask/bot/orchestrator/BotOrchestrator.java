@@ -37,19 +37,25 @@ public class BotOrchestrator {
     private final SemanticRouter router;
     private final ToolArgumentResolver resolver;
     private final ReplyComposer composer;
+    private final ConversationMemory memory;
+    private final PendingActionStore pending;
 
     public BotOrchestrator(TelegramClient telegram,
                            List<BotTool> tools,
                            LoginService loginService,
                            SemanticRouter router,
                            ToolArgumentResolver resolver,
-                           ReplyComposer composer) {
+                           ReplyComposer composer,
+                           ConversationMemory memory,
+                           PendingActionStore pending) {
         this.telegram = telegram;
         this.toolsByName = tools.stream().collect(Collectors.toMap(BotTool::getName, Function.identity()));
         this.loginService = loginService;
         this.router = router;
         this.resolver = resolver;
         this.composer = composer;
+        this.memory = memory;
+        this.pending = pending;
     }
 
     public void processIncomingMessage(Long chatId, String userText) {
@@ -67,23 +73,70 @@ public class BotOrchestrator {
             return;
         }
         if (text.equalsIgnoreCase("/logout")) {
+            memory.clear(chatId);
             telegram.sendMessage(chatId, loginService.handleLogout(chatId));
             return;
         }
 
+        // Remember the user's turn (commands above are control, not conversation,
+        // and /login carries the access code so we deliberately never store it).
+        memory.recordUser(chatId, text);
+
         // --- Login gate ---
         BotUserLink identity = loginService.current(chatId);
         if (identity == null) {
-            telegram.sendMessage(chatId,
+            respond(chatId,
                     "Primero inicia sesión para que pueda identificarte:\n" +
-                    "/login <código de acceso> <tu nombre>");
+                    "/login <tu código>");
             return;
+        }
+
+        // Conversation context fed to the local LLM so follow-ups resolve.
+        String context = memory.recall(chatId);
+
+        // --- Cancel a half-finished action ---
+        if (text.equalsIgnoreCase("/cancel") || text.equalsIgnoreCase("cancelar")) {
+            if (pending.has(chatId)) {
+                pending.clear(chatId);
+                respond(chatId, "Listo, cancelé la acción en curso. ¿En qué más te ayudo?");
+            } else {
+                respond(chatId, "No hay ninguna acción en curso.");
+            }
+            return;
+        }
+
+        // --- Continue a half-finished action (multi-turn slot filling) ---
+        // While an action is pending we treat this message as supplying the
+        // still-missing fields, instead of re-routing it through the router.
+        PendingActionStore.PendingAction p = pending.get(chatId);
+        if (p != null) {
+            BotTool pendingTool = toolsByName.get(p.toolName);
+            if (pendingTool == null) {
+                pending.clear(chatId);                 // tool no longer exists; fall through to routing
+            } else {
+                p.attempts++;
+                ToolArgumentResolver.Resolution res =
+                        resolver.resolve(pendingTool, identity, text, context, p.args);
+                if (res.missingRequired.isEmpty()) {
+                    pending.clear(chatId);
+                    executeAndReply(chatId, pendingTool, res.args, text, context);
+                } else if (p.attempts >= PendingActionStore.MAX_ATTEMPTS) {
+                    pending.clear(chatId);
+                    respond(chatId, "Cancelé la acción porque no pude reunir los datos necesarios (" +
+                            friendlyList(res.missingRequired) + "). Inténtalo de nuevo cuando quieras.");
+                } else {
+                    p.args.setAll(res.args);           // keep what we've gathered so far
+                    p.missing = res.missingRequired;
+                    respond(chatId, askFor(res.missingRequired));
+                }
+                return;
+            }
         }
 
         // --- Semantic routing ---
         var decision = router.route(text);
         if (decision.isEmpty()) {
-            telegram.sendMessage(chatId,
+            respond(chatId,
                     "No entendí bien tu solicitud, " + identity.getAppUserName() + ". " +
                     "Puedes pedirme cosas como: \"mis tareas pendientes\", \"mis kpis\", " +
                     "\"tareas del equipo\", \"crear una tarea\" o \"completar tarea\".");
@@ -94,35 +147,74 @@ public class BotOrchestrator {
         BotTool tool = toolsByName.get(toolName);
         if (tool == null) {
             log.error("Router chose unknown tool '{}'", toolName);
-            telegram.sendMessage(chatId, "Encontré una acción (" + toolName + ") pero no está disponible.");
+            respond(chatId, "Encontré una acción (" + toolName + ") pero no está disponible.");
             return;
         }
 
-        // --- Argument resolution ---
-        ToolArgumentResolver.Resolution res = resolver.resolve(tool, identity, text);
+        // --- Argument resolution (uses conversation context for follow-ups) ---
+        ToolArgumentResolver.Resolution res = resolver.resolve(tool, identity, text, context);
         if (!res.missingRequired.isEmpty()) {
-            telegram.sendMessage(chatId,
-                    "Para esto necesito que me indiques: " + String.join(", ", res.missingRequired) +
-                    ". Por favor inclúyelo en tu mensaje.");
+            // Remember the half-finished action so the user's next message completes it.
+            pending.put(chatId, new PendingActionStore.PendingAction(toolName, res.args, res.missingRequired));
+            respond(chatId, askFor(res.missingRequired));
             return;
         }
 
         // --- Execute + reply ---
+        executeAndReply(chatId, tool, res.args, text, context);
+    }
+
+    /** Run a tool with resolved args and send the composed reply. */
+    private void executeAndReply(Long chatId, BotTool tool, ObjectNode args, String text, String context) {
         try {
-            Object rawData = tool.execute(res.args);
-            String reply = composer.compose(text, rawData);
-            telegram.sendMessage(chatId, reply);
+            Object rawData = tool.execute(args);
+            // Write actions provide their own clear confirmation; only ask the
+            // LLM to phrase results for read tools (where natural language helps).
+            String confirmation = tool.successMessage(rawData);
+            String reply = confirmation != null ? confirmation : composer.compose(text, rawData, context);
+            respond(chatId, reply);
         } catch (Exception e) {
-            log.error("Tool execution failed tool={} args={}", toolName, res.args, e);
-            telegram.sendMessage(chatId, "Ocurrió un error al consultar la base de datos: " + e.getMessage());
+            log.error("Tool execution failed tool={} args={}", tool.getName(), args, e);
+            respond(chatId, "Ocurrió un error al consultar la base de datos: " + e.getMessage());
         }
+    }
+
+    /** Ask the user for the fields still required to finish the current action. */
+    private String askFor(List<String> missing) {
+        return "Para completar la acción necesito que me indiques: " + friendlyList(missing) +
+                ".\nPuedes dármelos en tu siguiente mensaje (uno o varios a la vez), " +
+                "o escribe /cancel para cancelar.";
+    }
+
+    /** Map raw schema field names to friendly Spanish labels for prompts. */
+    private String friendlyList(List<String> fields) {
+        return fields.stream().map(BotOrchestrator::friendlyField).collect(Collectors.joining(", "));
+    }
+
+    private static String friendlyField(String field) {
+        return switch (field) {
+            case "name" -> "el nombre de la tarea";
+            case "description" -> "una descripción";
+            case "assigneeId" -> "a quién se asigna (ID de usuario)";
+            case "sprintId" -> "el sprint (ID numérico)";
+            case "priority" -> "la prioridad (1, 2 o 3)";
+            case "estimatedHours" -> "horas estimadas";
+            case "taskId" -> "el ID de la tarea";
+            default -> field;
+        };
+    }
+
+    /** Send a reply to the user and remember it as part of the conversation. */
+    private void respond(Long chatId, String text) {
+        memory.recordBot(chatId, text);
+        telegram.sendMessage(chatId, text);
     }
 
     private String welcome(Long chatId) {
         boolean loggedIn = loginService.isLoggedIn(chatId);
         StringBuilder sb = new StringBuilder("👋 Soy el asistente de OctoTask.\n\n");
         if (!loggedIn) {
-            sb.append("Para empezar, vincula tu cuenta:\n/login <código de acceso> <tu nombre>\n\n");
+            sb.append("Para empezar, vincula tu cuenta con tu código personal:\n/login <tu código>\n\n");
         }
         sb.append("Luego puedes escribirme en lenguaje natural, por ejemplo:\n")
           .append("• \"¿qué tengo pendiente?\"\n")

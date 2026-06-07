@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.octotask.bot.data.OctoTaskDataClient;
 import com.octotask.bot.data.model.CreateTask;
+import com.octotask.bot.data.model.Task;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -55,5 +56,22 @@ public class CreateTaskTool implements BotTool {
         }
         log.info("create_task name={} assigneeId={} sprintId={}", task.getName(), task.getAssigneeId(), task.getSprintId());
         return client.createTask(task);
+    }
+
+    @Override
+    public String successMessage(Object result) {
+        if (result instanceof Task t) {
+            StringBuilder sb = new StringBuilder("✅ Tarea creada: #").append(t.getID())
+                    .append(" «").append(t.getName()).append("»\n")
+                    .append("• Sprint: ").append(t.getSprintID()).append("\n")
+                    .append("• Prioridad: ").append(t.getPriorityID()).append("\n")
+                    .append("• Asignada a: ")
+                    .append(t.getUserName() != null ? t.getUserName() : t.getUserID());
+            if (t.getDescription() != null && !t.getDescription().isBlank()) {
+                sb.append("\n• Descripción: ").append(t.getDescription());
+            }
+            return sb.toString();
+        }
+        return null;
     }
 }

@@ -82,7 +82,10 @@ public class OllamaLlmService implements LlmService {
             user.put("role", "user");
             user.put("content", userPrompt);
             ObjectNode options = body.putObject("options");
-            options.put("temperature", 0.2);
+            // Greedy, deterministic decoding: a small model is far less likely to
+            // confabulate narrative framing when temperature is 0.
+            options.put("temperature", 0.0);
+            options.put("top_p", 1.0);
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);

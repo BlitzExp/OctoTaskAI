@@ -4,6 +4,7 @@ import com.octotask.bot.ai.EmbeddingService;
 import com.octotask.bot.data.SemanticRoutingRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
@@ -32,6 +33,10 @@ public class RouteSeeder implements ApplicationRunner {
     private final EmbeddingService embeddings;
     private final SemanticRoutingRepository repo;
 
+    /** When true, delete all existing routes before seeding (clears stale/polluted rows). */
+    @Value("${bot.router.reset:false}")
+    private boolean reset;
+
     public RouteSeeder(EmbeddingService embeddings, SemanticRoutingRepository repo) {
         this.embeddings = embeddings;
         this.repo = repo;
@@ -43,14 +48,16 @@ public class RouteSeeder implements ApplicationRunner {
                 "muéstrame mis tareas", "cuáles son mis tareas", "ver todas mis tareas",
                 "show my tasks", "list all my tasks"));
         put("get_pending_tasks", List.of(
-                "qué tengo pendiente", "mis tareas pendientes", "qué me falta por hacer",
+                "qué tengo pendiente", "mis tareas pendientes", "qué tareas tengo pendientes",
+                "qué tareas tengo pendiente", "tareas sin terminar", "qué me falta por hacer",
                 "what do I have pending", "my pending tasks"));
         put("get_top_priority_task", List.of(
                 "qué hago primero", "cuál es mi tarea más importante", "en qué debería trabajar ahora",
                 "what should I work on next", "my highest priority task"));
         put("get_user_kpis", List.of(
-                "mis estadísticas", "mis kpis", "cómo voy", "cuántas horas he trabajado",
-                "my stats", "my personal kpis"));
+                "mis estadísticas", "mis kpis", "muéstrame mis kpis", "muéstrame mis estadísticas",
+                "ver mis kpis", "mis indicadores", "cómo voy", "cuántas horas he trabajado",
+                "my stats", "my personal kpis", "show my kpis"));
         put("get_team_tasks", List.of(
                 "tareas del equipo", "qué está haciendo el equipo", "ver las tareas del equipo",
                 "team tasks", "what is the team working on"));
@@ -68,14 +75,27 @@ public class RouteSeeder implements ApplicationRunner {
                 "sprint analytics", "per-member breakdown for the sprint"));
         put("create_task", List.of(
                 "crear una tarea", "nueva tarea", "agregar tarea", "quiero crear una tarea",
-                "create a task", "add a new task"));
+                "crea una tarea llamada con descripción asignada a un usuario en un sprint con prioridad",
+                "registra una nueva tarea con nombre descripción sprint y prioridad",
+                "dar de alta una tarea para un usuario en el sprint",
+                "create a task", "add a new task",
+                "create a task named with a description assigned to a user in a sprint with priority"));
         put("complete_task", List.of(
                 "marcar tarea como completada", "completar tarea", "ya terminé la tarea",
-                "mark a task as done", "complete task"));
+                "marca la tarea número como completada", "cierra la tarea con id",
+                "mark a task as done", "complete task", "mark task id as done"));
     }};
 
     @Override
     public void run(ApplicationArguments args) {
+        if (reset) {
+            try {
+                int deleted = repo.deleteAll();
+                log.info("bot.router.reset=true → deleted {} existing routes before reseeding", deleted);
+            } catch (Exception e) {
+                log.warn("Route reset failed; continuing: {}", e.getMessage());
+            }
+        }
         try {
             long existing = repo.count();
             if (existing > 0) {
