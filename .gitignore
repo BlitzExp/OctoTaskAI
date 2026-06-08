@@ -19,3 +19,10 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+
+terraform/terraform.tfvars
+terraform/.terraform/
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+terraform/*.tfstate
+terraform/*.tfstate.*

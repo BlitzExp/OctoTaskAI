@@ -1,0 +1,88 @@
+version: 0.1
+component: build
+timeoutInSeconds: 1800
+shell: bash
+
+env:
+  variables:
+    APP_NAME: "octotask-ai"
+    REGION: "mx-queretaro-1"
+    REPO: "octotask-ai/octotask-ai"
+
+  vaultVariables:
+    OCI_USERNAME: "ocid1.vaultsecret.oc1.mx-queretaro-1.amaaaaaase7jhxqa36kllm7zqbnyygobofzpkfbsqmsvdeom5rlqi5uqh2fa"
+    OCI_NAMESPACE: "ocid1.vaultsecret.oc1.mx-queretaro-1.amaaaaaase7jhxqa2anc7lzvhtj67agd3qznjmsdkhjwvumh3tg5bokivupq"
+    OCI_AUTH_TOKEN: "ocid1.vaultsecret.oc1.mx-queretaro-1.amaaaaaase7jhxqampe7bzmli2p5a4meoxyl2bhk2ivzbkxb3af627dozaqq"
+    DOCKER_HUB_TOKEN: "ocid1.vaultsecret.oc1.mx-queretaro-1.amaaaaaase7jhxqahslvasz33o5lopjf5yjrsqvxmhkddevzjdkst4njlqgq"
+    DOCKER_HUB_USER: "ocid1.vaultsecret.oc1.mx-queretaro-1.amaaaaaase7jhxqa6rwbcoilymgliccj3mcbfcu6uyczbkx74ibw5ypqwknq"
+
+  exportedVariables:
+    - IMAGE_TAG
+    - IMAGE_URL
+
+steps:
+  - type: Command
+    name: "Generate Image Tag"
+    command: |
+      set -e
+
+      if [ -n "${OCI_TRIGGER_COMMIT_HASH}" ]; then
+        export IMAGE_TAG=$(echo "${OCI_TRIGGER_COMMIT_HASH}" | cut -c1-12)
+      else
+        export IMAGE_TAG=$(date +%s)
+      fi
+
+      export IMAGE_URL="${REGION}.ocir.io/${OCI_NAMESPACE}/${REPO}:${IMAGE_TAG}"
+
+      echo "Image tag: ${IMAGE_TAG}"
+      echo "Image URL: ${IMAGE_URL}"
+
+  - type: Command
+    name: "Prepare Maven Wrapper"
+    command: |
+      set -e
+      chmod +x ./mvnw
+
+  - type: Command
+    name: "Maven Build"
+    command: |
+      set -e
+      ./mvnw clean package -DskipTests
+
+  - type: Command
+    name: "Login to OCIR"
+    command: |
+      set -e
+      echo "${OCI_AUTH_TOKEN}" | docker login ${REGION}.ocir.io \
+        -u "${OCI_NAMESPACE}/${OCI_USERNAME}" \
+        --password-stdin
+
+  - type: Command
+    name: "Build Docker Image"
+    command: |
+      set -e
+      docker build -t ${APP_NAME}:${IMAGE_TAG} .
+
+  - type: Command
+    name: "Tag Docker Image"
+    command: |
+      set -e
+
+      docker tag ${APP_NAME}:${IMAGE_TAG} \
+        ${REGION}.ocir.io/${OCI_NAMESPACE}/${REPO}:${IMAGE_TAG}
+
+      docker tag ${APP_NAME}:${IMAGE_TAG} \
+        ${REGION}.ocir.io/${OCI_NAMESPACE}/${REPO}:latest
+
+  - type: Command
+    name: "Push Docker Image to OCIR"
+    command: |
+      set -e
+
+      docker push ${REGION}.ocir.io/${OCI_NAMESPACE}/${REPO}:${IMAGE_TAG}
+      docker push ${REGION}.ocir.io/${OCI_NAMESPACE}/${REPO}:latest
+
+outputArtifacts:
+  - name: octotask_ai_image_artifact
+    type: DOCKER_IMAGE
+    location: ${REGION}.ocir.io/${OCI_NAMESPACE}/${REPO}:${IMAGE_TAG}

@@ -9,3 +9,10 @@ target/
 logs/
 README.md
 .github/
+
+.gitignore
+wallet
+terraform
+docs
+*.tmp
+.DS_Store
