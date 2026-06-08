@@ -26,7 +26,7 @@ public class JdbcOctoTaskDataClient implements OctoTaskDataClient {
     }
 
     // -----------------------------------------------------------------
-    //  Identity
+    // Identity
     // -----------------------------------------------------------------
 
     @Override
@@ -51,48 +51,48 @@ public class JdbcOctoTaskDataClient implements OctoTaskDataClient {
     }
 
     // -----------------------------------------------------------------
-    //  Reads
+    // Reads
     // -----------------------------------------------------------------
 
     @Override
     public List<Task> getTasksByTeamId(int teamId) {
         String sql = "SELECT t.*, u.name as userName, s.end_date as sprintEndDate, s.SPRINT_NUM as sprintNumber " +
-                     "FROM TASKS t " +
-                     "JOIN APP_USER u ON t.user_id = u.id " +
-                     "JOIN SPRINT s ON t.sprint_id = s.id " +
-                     "WHERE u.team_id = ? AND t.visible = 1";
+                "FROM TASKS t " +
+                "JOIN APP_USER u ON t.user_id = u.id " +
+                "JOIN SPRINT s ON t.sprint_id = s.id " +
+                "WHERE u.team_id = ? AND t.visible = 1";
         return jdbc.query(sql, new TaskRowMapper(), teamId);
     }
 
     @Override
     public List<Task> getTasksByUserName(String userName) {
         String sql = "SELECT t.*, u.name as userName, s.end_date as sprintEndDate, s.SPRINT_NUM as sprintNumber " +
-                     "FROM TASKS t " +
-                     "JOIN APP_USER u ON t.user_id = u.id " +
-                     "JOIN SPRINT s ON t.sprint_id = s.id " +
-                     "WHERE LOWER(u.name) = LOWER(?)";
+                "FROM TASKS t " +
+                "JOIN APP_USER u ON t.user_id = u.id " +
+                "JOIN SPRINT s ON t.sprint_id = s.id " +
+                "WHERE LOWER(u.name) = LOWER(?)";
         return jdbc.query(sql, new TaskRowMapper(), userName);
     }
 
     @Override
     public List<Task> getPendingTasksByUserName(String userName) {
         String sql = "SELECT t.*, u.name as userName, s.end_date as sprintEndDate, s.SPRINT_NUM as sprintNumber " +
-                     "FROM TASKS t " +
-                     "JOIN APP_USER u ON t.user_id = u.id " +
-                     "JOIN SPRINT s ON t.sprint_id = s.id " +
-                     "WHERE LOWER(u.name) = LOWER(?) AND t.state_id != 3";
+                "FROM TASKS t " +
+                "JOIN APP_USER u ON t.user_id = u.id " +
+                "JOIN SPRINT s ON t.sprint_id = s.id " +
+                "WHERE LOWER(u.name) = LOWER(?) AND t.state_id != 1";
         return jdbc.query(sql, new TaskRowMapper(), userName);
     }
 
     @Override
     public Task getTopPriorityTask(String userName) {
         String sql = "SELECT t.*, u.name as userName, s.end_date as sprintEndDate, s.SPRINT_NUM as sprintNumber " +
-                     "FROM TASKS t " +
-                     "JOIN APP_USER u ON t.user_id = u.id " +
-                     "JOIN SPRINT s ON t.sprint_id = s.id " +
-                     "WHERE LOWER(u.name) = LOWER(?) AND t.state_id != 3 " +
-                     "ORDER BY t.priority_id ASC, s.end_date ASC " +
-                     "FETCH FIRST 1 ROWS ONLY";
+                "FROM TASKS t " +
+                "JOIN APP_USER u ON t.user_id = u.id " +
+                "JOIN SPRINT s ON t.sprint_id = s.id " +
+                "WHERE LOWER(u.name) = LOWER(?) AND t.state_id != 1 " +
+                "ORDER BY t.priority_id ASC, s.end_date ASC " +
+                "FETCH FIRST 1 ROWS ONLY";
         List<Task> tasks = jdbc.query(sql, new TaskRowMapper(), userName);
         return tasks.isEmpty() ? null : tasks.get(0);
     }
@@ -106,9 +106,9 @@ public class JdbcOctoTaskDataClient implements OctoTaskDataClient {
     @Override
     public int getLateTasksBySprint(int teamId, int sprintId) {
         String sql = "SELECT COUNT(*) FROM TASKS t " +
-                     "JOIN TASK_STATE ts ON ts.id = t.state_id " +
-                     "JOIN SPRINT s ON s.id = t.sprint_id " +
-                     "WHERE s.team_id = ? AND t.sprint_id = ? AND ts.name = 'LATE' AND t.visible = 1";
+                "JOIN TASK_STATE ts ON ts.id = t.state_id " +
+                "JOIN SPRINT s ON s.id = t.sprint_id " +
+                "WHERE s.team_id = ? AND t.sprint_id = ? AND ts.name = 'LATE' AND t.visible = 1";
         Integer count = jdbc.queryForObject(sql, Integer.class, teamId, sprintId);
         return count == null ? 0 : count;
     }
@@ -118,19 +118,23 @@ public class JdbcOctoTaskDataClient implements OctoTaskDataClient {
         Map<String, Object> kpis = new HashMap<>();
         kpis.put("Total_Tasks", queryCount(
                 "SELECT COUNT(*) FROM TASKS t JOIN APP_USER u ON u.id = t.user_id " +
-                "WHERE u.team_id = ? AND t.visible = 1", teamId));
+                        "WHERE u.team_id = ? AND t.visible = 1",
+                teamId));
         kpis.put("Completed_Tasks", queryCount(
                 "SELECT COUNT(*) FROM TASKS t JOIN TASK_STATE ts ON ts.id = t.state_id " +
-                "JOIN SPRINT s ON s.id = t.sprint_id " +
-                "WHERE ts.name = 'DONE' AND s.team_id = ? AND t.visible = 1", teamId));
+                        "JOIN SPRINT s ON s.id = t.sprint_id " +
+                        "WHERE ts.name = 'DONE' AND s.team_id = ? AND t.visible = 1",
+                teamId));
         kpis.put("Pending_Tasks", queryCount(
                 "SELECT COUNT(*) FROM TASKS t JOIN TASK_STATE ts ON ts.id = t.state_id " +
-                "JOIN SPRINT s ON s.id = t.sprint_id " +
-                "WHERE ts.name != 'DONE' AND s.team_id = ? AND t.visible = 1", teamId));
+                        "JOIN SPRINT s ON s.id = t.sprint_id " +
+                        "WHERE ts.name != 'DONE' AND s.team_id = ? AND t.visible = 1",
+                teamId));
         kpis.put("Late_Tasks", queryCount(
                 "SELECT COUNT(*) FROM TASKS t JOIN TASK_STATE ts ON ts.id = t.state_id " +
-                "JOIN APP_USER u ON u.id = t.user_id " +
-                "WHERE u.team_id = ? AND ts.name = 'LATE' AND t.visible = 1", teamId));
+                        "JOIN APP_USER u ON u.id = t.user_id " +
+                        "WHERE u.team_id = ? AND ts.name = 'LATE' AND t.visible = 1",
+                teamId));
         kpis.put("Averages_Per_Member", averageTasksPerStatus(teamId));
         kpis.put("Average_Hours_Per_Sprint", averageWorkHoursPerSprint(teamId));
         return kpis;
@@ -147,18 +151,18 @@ public class JdbcOctoTaskDataClient implements OctoTaskDataClient {
     @Override
     public Map<String, Object> getUserKpis(String userName) {
         String sql = "SELECT " +
-                     "COUNT(*) as total_tasks, " +
-                     "SUM(CASE WHEN t.state_id = 3 THEN 1 ELSE 0 END) as completed_tasks, " +
-                     "SUM(CASE WHEN t.state_id != 3 THEN 1 ELSE 0 END) as pending_tasks, " +
-                     "SUM(t.spent_hours) as total_hours_spent " +
-                     "FROM TASKS t " +
-                     "JOIN APP_USER u ON t.user_id = u.id " +
-                     "WHERE LOWER(u.name) = LOWER(?)";
+                "COUNT(*) as total_tasks, " +
+                "SUM(CASE WHEN t.state_id = 1 THEN 1 ELSE 0 END) as completed_tasks, " +
+                "SUM(CASE WHEN t.state_id != 1 THEN 1 ELSE 0 END) as pending_tasks, " +
+                "SUM(t.spent_hours) as total_hours_spent " +
+                "FROM TASKS t " +
+                "JOIN APP_USER u ON t.user_id = u.id " +
+                "WHERE LOWER(u.name) = LOWER(?)";
         return jdbc.queryForMap(sql, userName);
     }
 
     // -----------------------------------------------------------------
-    //  Writes
+    // Writes
     // -----------------------------------------------------------------
 
     @Override
@@ -197,7 +201,7 @@ public class JdbcOctoTaskDataClient implements OctoTaskDataClient {
 
     @Override
     public int markTaskCompleted(int taskId) {
-        String sql = "UPDATE TASKS SET state_id = 3 WHERE id = ?";
+        String sql = "UPDATE TASKS SET state_id = 1 WHERE id = ?";
         int rowsAffected = jdbc.update(sql, taskId);
         if (rowsAffected == 0) {
             throw new IllegalStateException("Could not find a task with ID " + taskId);
@@ -206,15 +210,15 @@ public class JdbcOctoTaskDataClient implements OctoTaskDataClient {
     }
 
     // -----------------------------------------------------------------
-    //  Internal helpers
+    // Internal helpers
     // -----------------------------------------------------------------
 
     private Task getTaskById(int taskId) {
         String sql = "SELECT t.*, u.name as userName, s.end_date as sprintEndDate, s.SPRINT_NUM as sprintNumber " +
-                     "FROM TASKS t " +
-                     "LEFT JOIN APP_USER u ON t.user_id = u.id " +
-                     "LEFT JOIN SPRINT s ON t.sprint_id = s.id " +
-                     "WHERE t.id = ?";
+                "FROM TASKS t " +
+                "LEFT JOIN APP_USER u ON t.user_id = u.id " +
+                "LEFT JOIN SPRINT s ON t.sprint_id = s.id " +
+                "WHERE t.id = ?";
         return jdbc.queryForObject(sql, new TaskRowMapper(), taskId);
     }
 
@@ -237,8 +241,7 @@ public class JdbcOctoTaskDataClient implements OctoTaskDataClient {
                 "user_name", rs.getString("user_name"),
                 "completed_tasks", rs.getInt("completed_tasks"),
                 "late_tasks", rs.getInt("late_tasks"),
-                "pending_tasks", rs.getInt("pending_tasks")
-        ), sprintId, teamId);
+                "pending_tasks", rs.getInt("pending_tasks")), sprintId, teamId);
     }
 
     private List<Map<String, Object>> memberWorkHoursBySprint(int teamId, int sprintId) {
@@ -250,8 +253,7 @@ public class JdbcOctoTaskDataClient implements OctoTaskDataClient {
                 "GROUP BY u.id, u.name";
         return jdbc.query(sql, (rs, n) -> Map.of(
                 "user_name", rs.getString("user_name"),
-                "total_work_hours", rs.getInt("total_work_hours")
-        ), sprintId, teamId);
+                "total_work_hours", rs.getInt("total_work_hours")), sprintId, teamId);
     }
 
     private List<Map<String, Object>> averageTasksPerStatus(int teamId) {
@@ -263,7 +265,8 @@ public class JdbcOctoTaskDataClient implements OctoTaskDataClient {
                 "  SELECT t.user_id, t.sprint_id, " +
                 "    SUM(CASE WHEN ts.name = 'DONE' THEN 1 ELSE 0 END) AS completed, " +
                 "    SUM(CASE WHEN ts.name = 'LATE' THEN 1 ELSE 0 END) AS late, " +
-                "    SUM(CASE WHEN ts.name IN ('PENDING', 'ON GOING') AND t.visible = 1 THEN 1 ELSE 0 END) AS pending " +
+                "    SUM(CASE WHEN ts.name IN ('PENDING', 'ON GOING') AND t.visible = 1 THEN 1 ELSE 0 END) AS pending "
+                +
                 "  FROM TASKS t " +
                 "  JOIN TASK_STATE ts ON ts.id = t.state_id " +
                 "  JOIN SPRINT s ON s.id = t.sprint_id " +
@@ -278,9 +281,9 @@ public class JdbcOctoTaskDataClient implements OctoTaskDataClient {
                 "avg_late_tasks", rs.getDouble("avg_late_tasks"),
                 "avg_pending_tasks", rs.getDouble("avg_pending_tasks"),
                 "avg_total_tasks", rs.getDouble("avg_completed_tasks")
-                                 + rs.getDouble("avg_late_tasks")
-                                 + rs.getDouble("avg_pending_tasks")
-        ), teamId);
+                        + rs.getDouble("avg_late_tasks")
+                        + rs.getDouble("avg_pending_tasks")),
+                teamId);
     }
 
     private List<Map<String, Object>> averageWorkHoursPerSprint(int teamId) {
@@ -297,7 +300,6 @@ public class JdbcOctoTaskDataClient implements OctoTaskDataClient {
                 "GROUP BY u.id, u.name";
         return jdbc.query(sql, (rs, n) -> Map.of(
                 "user_name", rs.getString("user_name"),
-                "avg_hours_per_sprint", rs.getDouble("avg_hours_per_sprint")
-        ), teamId);
+                "avg_hours_per_sprint", rs.getDouble("avg_hours_per_sprint")), teamId);
     }
 }

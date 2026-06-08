@@ -18,11 +18,11 @@ import java.util.stream.Collectors;
 /**
  * Routes an incoming Telegram message to the right action:
  *
- *   1. login gate — unlinked chats are asked to /login;
- *   2. semantic router — local embeddings pick which tool the message maps to;
- *   3. argument resolver — identity + local LLM fill the tool's parameters;
- *   4. tool execution — against the OctoTask Oracle DB;
- *   5. reply composer — local LLM phrases the result for Telegram.
+ * 1. login gate — unlinked chats are asked to /login;
+ * 2. semantic router — local embeddings pick which tool the message maps to;
+ * 3. argument resolver — identity + local LLM fill the tool's parameters;
+ * 4. tool execution — against the OctoTask Oracle DB;
+ * 5. reply composer — local LLM phrases the result for Telegram.
  *
  * No cloud LLM is involved; everything runs locally except the DB.
  */
@@ -41,13 +41,13 @@ public class BotOrchestrator {
     private final PendingActionStore pending;
 
     public BotOrchestrator(TelegramClient telegram,
-                           List<BotTool> tools,
-                           LoginService loginService,
-                           SemanticRouter router,
-                           ToolArgumentResolver resolver,
-                           ReplyComposer composer,
-                           ConversationMemory memory,
-                           PendingActionStore pending) {
+            List<BotTool> tools,
+            LoginService loginService,
+            SemanticRouter router,
+            ToolArgumentResolver resolver,
+            ReplyComposer composer,
+            ConversationMemory memory,
+            PendingActionStore pending) {
         this.telegram = telegram;
         this.toolsByName = tools.stream().collect(Collectors.toMap(BotTool::getName, Function.identity()));
         this.loginService = loginService;
@@ -87,7 +87,7 @@ public class BotOrchestrator {
         if (identity == null) {
             respond(chatId,
                     "Primero inicia sesión para que pueda identificarte:\n" +
-                    "/login <tu código>");
+                            "/login <tu código>");
             return;
         }
 
@@ -112,11 +112,10 @@ public class BotOrchestrator {
         if (p != null) {
             BotTool pendingTool = toolsByName.get(p.toolName);
             if (pendingTool == null) {
-                pending.clear(chatId);                 // tool no longer exists; fall through to routing
+                pending.clear(chatId); // tool no longer exists; fall through to routing
             } else {
                 p.attempts++;
-                ToolArgumentResolver.Resolution res =
-                        resolver.resolve(pendingTool, identity, text, context, p.args);
+                ToolArgumentResolver.Resolution res = resolver.resolve(pendingTool, identity, text, context, p.args);
                 if (res.missingRequired.isEmpty()) {
                     pending.clear(chatId);
                     executeAndReply(chatId, pendingTool, res.args, text, context);
@@ -125,7 +124,7 @@ public class BotOrchestrator {
                     respond(chatId, "Cancelé la acción porque no pude reunir los datos necesarios (" +
                             friendlyList(res.missingRequired) + "). Inténtalo de nuevo cuando quieras.");
                 } else {
-                    p.args.setAll(res.args);           // keep what we've gathered so far
+                    p.args.setAll(res.args); // keep what we've gathered so far
                     p.missing = res.missingRequired;
                     respond(chatId, askFor(res.missingRequired));
                 }
@@ -135,11 +134,23 @@ public class BotOrchestrator {
 
         // --- Semantic routing ---
         var decision = router.route(text);
+        // Debug: inform the user which backend function was selected and the
+        // most similar example that led to that choice.
+        /**
+         * if (decision.isPresent()) {
+         * var d = decision.get();
+         * String example = d.getMatchedExample() == null ? "" : d.getMatchedExample();
+         * telegram.sendMessage(chatId, "DEBUG: función seleccionada: " +
+         * d.getToolName() +
+         * " -- ejemplo similar: " + example);
+         * }
+         **/
+
         if (decision.isEmpty()) {
             respond(chatId,
                     "No entendí bien tu solicitud, " + identity.getAppUserName() + ". " +
-                    "Puedes pedirme cosas como: \"mis tareas pendientes\", \"mis kpis\", " +
-                    "\"tareas del equipo\", \"crear una tarea\" o \"completar tarea\".");
+                            "Puedes pedirme cosas como: \"mis tareas pendientes\", \"mis kpis\", " +
+                            "\"tareas del equipo\", \"crear una tarea\" o \"completar tarea\".");
             return;
         }
 
@@ -217,12 +228,12 @@ public class BotOrchestrator {
             sb.append("Para empezar, vincula tu cuenta con tu código personal:\n/login <tu código>\n\n");
         }
         sb.append("Luego puedes escribirme en lenguaje natural, por ejemplo:\n")
-          .append("• \"¿qué tengo pendiente?\"\n")
-          .append("• \"mis kpis\"\n")
-          .append("• \"tareas del equipo\"\n")
-          .append("• \"crear una tarea ...\"\n")
-          .append("• \"completar la tarea 42\"\n\n")
-          .append("Comandos: /login, /logout, /help");
+                .append("• \"¿qué tengo pendiente?\"\n")
+                .append("• \"mis kpis\"\n")
+                .append("• \"tareas del equipo\"\n")
+                .append("• \"crear una tarea ...\"\n")
+                .append("• \"completar la tarea 42\"\n\n")
+                .append("Comandos: /login, /logout, /help");
         return sb.toString();
     }
 }

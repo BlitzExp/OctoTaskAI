@@ -35,4 +35,4 @@ EXPOSE 8080
 # - TNS_ADMIN: path to Oracle wallet inside container (if using wallet files)
 # - DB_URL, DB_USER, DB_PASSWORD: database credentials (use secrets in production)
 
-ENTRYPOINT ["java", "-Djava.security.egd=file:/dev/./urandom", "-jar", "/app/app.jar"]
+ENTRYPOINT ["java", "-Djavax.xml.parsers.SAXParserFactory=com.sun.org.apache.xerces.internal.jaxp.SAXParserFactoryImpl", "-Djavax.xml.parsers.DocumentBuilderFactory=com.sun.org.apache.xerces.internal.jaxp.DocumentBuilderFactoryImpl", "-jar", "app.jar"]

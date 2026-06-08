@@ -20,11 +20,11 @@ import java.util.Optional;
  * Builds a tool's argument JSON from the logged-in identity + the user's text.
  *
  * Strategy:
- *   1. Read the tool's own parameter schema (it already declares its fields).
- *   2. Inject identity-derived fields by naming convention
- *      (userName, teamId, assigneeId) so the user never has to state who they are.
- *   3. Ask the local LLM to extract any remaining fields from the message.
- *   4. Report any required field still missing so the orchestrator can ask.
+ * 1. Read the tool's own parameter schema (it already declares its fields).
+ * 2. Inject identity-derived fields by naming convention
+ * (userName, teamId, assigneeId) so the user never has to state who they are.
+ * 3. Ask the local LLM to extract any remaining fields from the message.
+ * 4. Report any required field still missing so the orchestrator can ask.
  */
 @Component
 public class ToolArgumentResolver {
@@ -61,10 +61,11 @@ public class ToolArgumentResolver {
      * @param seedArgs arguments already collected on a previous turn (multi-turn
      *                 slot filling). Fields already present are kept and not
      *                 re-extracted; only the still-missing ones are pulled from
-     *                 the latest {@code userText}. Pass {@code null} for a fresh start.
+     *                 the latest {@code userText}. Pass {@code null} for a fresh
+     *                 start.
      */
     public Resolution resolve(BotTool tool, BotUserLink identity, String userText,
-                              String conversationContext, ObjectNode seedArgs) {
+            String conversationContext, ObjectNode seedArgs) {
         ObjectNode schema = mapper.createObjectNode();
         tool.buildParameters(schema);
         JsonNode properties = schema.path("properties");
@@ -85,7 +86,8 @@ public class ToolArgumentResolver {
         Iterator<String> fields = properties.fieldNames();
         while (fields.hasNext()) {
             String field = fields.next();
-            if (!args.has(field)) toExtract.add(field);
+            if (!args.has(field))
+                toExtract.add(field);
         }
 
         // 3) LLM extraction for the remaining fields
@@ -93,16 +95,75 @@ public class ToolArgumentResolver {
             extractWithLlm(args, properties, toExtract, userText, conversationContext);
         }
 
+        // 3b) Fallback: if required numeric fields are still missing, try to
+        // parse them directly from the user's latest message (e.g. user replies
+        // with "42"). This helps when the LLM is unavailable or fails to
+        // extract simple numeric answers during slot filling.
+        if (!toExtract.isEmpty()) {
+            parseNumericFallback(args, properties, toExtract, userText);
+        }
+
         // 4) which required fields are still missing?
         List<String> missing = new ArrayList<>();
         for (String req : required) {
-            if (!args.has(req) || args.get(req).isNull()) missing.add(req);
+            if (!args.has(req) || args.get(req).isNull())
+                missing.add(req);
         }
         return new Resolution(args, missing);
     }
 
+    /**
+     * Try to find integer/number values in the user's text for still-missing
+     * numeric fields and inject them into args.
+     */
+    private void parseNumericFallback(ObjectNode args, JsonNode properties, List<String> fields, String userText) {
+        if (userText == null || userText.isBlank())
+            return;
+        // find first integer and first decimal number
+        java.util.regex.Matcher intMatcher = java.util.regex.Pattern.compile("(-?\\d+)").matcher(userText);
+        java.util.regex.Matcher numMatcher = java.util.regex.Pattern.compile("(-?\\d+(?:\\.\\d+)?)/").matcher(userText);
+        Integer foundInt = null;
+        Double foundNum = null;
+        if (intMatcher.find()) {
+            try {
+                foundInt = Integer.parseInt(intMatcher.group(1));
+            } catch (Exception ignored) {
+            }
+        }
+        if (foundNum == null) {
+            java.util.regex.Matcher dm = java.util.regex.Pattern.compile("(-?\\d+(?:\\.\\d+)?)").matcher(userText);
+            if (dm.find()) {
+                try {
+                    foundNum = Double.parseDouble(dm.group(1));
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        for (String f : fields) {
+            if (args.has(f))
+                continue;
+            JsonNode prop = properties.get(f);
+            String type = prop.path("type").asText("STRING");
+            try {
+                switch (type) {
+                    case "INTEGER" -> {
+                        if (foundInt != null)
+                            args.put(f, foundInt);
+                    }
+                    case "NUMBER" -> {
+                        if (foundNum != null)
+                            args.put(f, foundNum);
+                    }
+                }
+            } catch (Exception e) {
+                log.debug("Numeric fallback parse failed for field {}: {}", f, e.getMessage());
+            }
+        }
+    }
+
     private void injectIdentity(ObjectNode args, JsonNode properties, BotUserLink id) {
-        if (id == null) return;
+        if (id == null)
+            return;
         if (properties.has("userName")) {
             args.put("userName", id.getAppUserName());
         }
@@ -115,7 +176,7 @@ public class ToolArgumentResolver {
     }
 
     private void extractWithLlm(ObjectNode args, JsonNode properties, List<String> fields,
-                                String userText, String conversationContext) {
+            String userText, String conversationContext) {
         StringBuilder fieldSpec = new StringBuilder();
         for (String f : fields) {
             JsonNode prop = properties.get(f);
@@ -142,27 +203,35 @@ public class ToolArgumentResolver {
                 "Fields: name (STRING), sprintId (INTEGER)\n" +
                 "User message: \"sprint 5 y prioridad 2\"\nJSON: {\"sprintId\":5}";
         String history = (conversationContext == null || conversationContext.isBlank())
-                ? "" : "Prior conversation:\n" + conversationContext + "\n";
+                ? ""
+                : "Prior conversation:\n" + conversationContext + "\n";
         String prompt = history + "Fields to extract:\n" + fieldSpec +
                 "\nUser message: \"" + userText + "\"\nJSON:";
 
         String raw = llm.generate(system, prompt);
-        if (raw == null) return;
+        if (raw == null)
+            return;
         JsonNode parsed = parseJsonObject(raw);
-        if (parsed == null) return;
+        if (parsed == null)
+            return;
 
         for (String f : fields) {
-            if (!parsed.has(f) || parsed.get(f).isNull()) continue;
+            if (!parsed.has(f) || parsed.get(f).isNull())
+                continue;
             JsonNode value = parsed.get(f);
             String type = properties.get(f).path("type").asText("STRING");
             switch (type) {
                 case "INTEGER" -> {
-                    if (value.canConvertToInt()) args.put(f, value.asInt());
-                    else if (value.isTextual() && value.asText().matches("-?\\d+")) args.put(f, Integer.parseInt(value.asText()));
+                    if (value.canConvertToInt())
+                        args.put(f, value.asInt());
+                    else if (value.isTextual() && value.asText().matches("-?\\d+"))
+                        args.put(f, Integer.parseInt(value.asText()));
                 }
                 case "NUMBER" -> {
-                    if (value.isNumber()) args.put(f, value.asDouble());
-                    else if (value.isTextual() && value.asText().matches("-?\\d+(\\.\\d+)?")) args.put(f, Double.parseDouble(value.asText()));
+                    if (value.isNumber())
+                        args.put(f, value.asDouble());
+                    else if (value.isTextual() && value.asText().matches("-?\\d+(\\.\\d+)?"))
+                        args.put(f, Double.parseDouble(value.asText()));
                 }
                 default -> {
                     String text = value.asText();
@@ -183,9 +252,13 @@ public class ToolArgumentResolver {
             "tarea", "tareas", "una tarea", "nueva tarea", "la tarea",
             "task", "a task", "new task", "the task");
 
-    /** True if the text is just a filler/command word, not a real user-supplied value. */
+    /**
+     * True if the text is just a filler/command word, not a real user-supplied
+     * value.
+     */
     private static boolean isGenericNoise(String text) {
-        if (text == null) return true;
+        if (text == null)
+            return true;
         String t = text.trim().toLowerCase();
         return t.isEmpty() || GENERIC_NOISE.contains(t);
     }
@@ -194,7 +267,8 @@ public class ToolArgumentResolver {
     private JsonNode parseJsonObject(String raw) {
         int start = raw.indexOf('{');
         int end = raw.lastIndexOf('}');
-        if (start < 0 || end <= start) return null;
+        if (start < 0 || end <= start)
+            return null;
         String json = raw.substring(start, end + 1);
         try {
             return mapper.readTree(json);

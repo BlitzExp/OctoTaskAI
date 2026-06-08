@@ -23,16 +23,47 @@ public class TelegramClient {
         this.restTemplate = restTemplate;
     }
 
+    private static final int TELEGRAM_CHUNK = 3000;
+
     public void sendMessage(Long chatId, String textToSend) {
+        if (textToSend == null)
+            return;
+        int length = textToSend.length();
+        int offset = 0;
+        while (offset < length) {
+            int end = Math.min(offset + TELEGRAM_CHUNK, length);
+            // If we're cutting in the middle of a word and not at the end of the whole
+            // text,
+            // extend to include the rest of the current word so the split doesn't break
+            // words.
+            if (end < length) {
+                // If the next char is not whitespace, advance to the next whitespace (end of
+                // word)
+                if (!Character.isWhitespace(textToSend.charAt(end))) {
+                    int ext = end;
+                    while (ext < length && !Character.isWhitespace(textToSend.charAt(ext))) {
+                        ext++;
+                    }
+                    end = ext;
+                }
+            }
+
+            String chunk = textToSend.substring(offset, end);
+            sendChunk(chatId, chunk);
+            offset = end;
+        }
+    }
+
+    private void sendChunk(Long chatId, String text) {
         String url = "https://api.telegram.org/bot" + botToken + "/sendMessage";
         Map<String, Object> body = new HashMap<>();
         body.put("chat_id", chatId);
-        body.put("text", textToSend);
+        body.put("text", text);
         try {
             restTemplate.postForObject(url, body, String.class);
-            log.info("Telegram message sent chatId={}", chatId);
+            log.info("Telegram message chunk sent chatId={} size={}", chatId, text == null ? 0 : text.length());
         } catch (Exception e) {
-            log.error("Telegram sendMessage failed chatId={}", chatId, e);
+            log.error("Telegram sendMessage chunk failed chatId={}", chatId, e);
         }
     }
 }

@@ -22,7 +22,7 @@ public class GetTeamTasksTool implements BotTool {
     public String getName() { return "get_team_tasks"; }
 
     @Override
-    public String getDescription() {
+    public String getDescription() {    
         return "Fetches all pending and current tasks for a specific team.";
     }
 
