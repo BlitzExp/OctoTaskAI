@@ -9,7 +9,6 @@ RUN mvn -B clean package -DskipTests
 # --- runtime stage ---
 FROM eclipse-temurin:17-jre
 WORKDIR /app
-<<<<<<< HEAD
 # Install runtime dependencies and ONNX Runtime native binaries
 RUN apt-get update && apt-get install -y --no-install-recommends \
 		curl ca-certificates libgomp1 && rm -rf /var/lib/apt/lists/*
@@ -37,8 +36,3 @@ EXPOSE 8080
 # - DB_URL, DB_USER, DB_PASSWORD: database credentials (use secrets in production)
 
 ENTRYPOINT ["java", "-Djavax.xml.parsers.SAXParserFactory=com.sun.org.apache.xerces.internal.jaxp.SAXParserFactoryImpl", "-Djavax.xml.parsers.DocumentBuilderFactory=com.sun.org.apache.xerces.internal.jaxp.DocumentBuilderFactoryImpl", "-jar", "app.jar"]
-=======
-COPY --from=build /app/target/*.jar app.jar
-EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "/app/app.jar"]
->>>>>>> 41e62851987eb2c671793f72432cedc9b270fc77
