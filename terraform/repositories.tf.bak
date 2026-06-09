@@ -1,0 +1,5 @@
+resource "oci_artifacts_container_repository" "octotask_ai" {
+  compartment_id = var.ociCompartmentOcid
+  display_name   = "octotask-ai/octotask-ai"
+  is_public      = false
+}

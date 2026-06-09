@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: octotask-ai-config
+  namespace: octotask-ai
+data:
+  SERVER_PORT: "8080"
+
+  OLLAMA_ENABLED: "true"
+  OLLAMA_URL: "http://localhost:11434"
+  OLLAMA_MODEL: "qwen2.5:1.5b-instruct"
+
+  DRIVER_CLASS_NAME: "oracle.jdbc.OracleDriver"
+  DB2_DRIVER_CLASS_NAME: "oracle.jdbc.OracleDriver"
+
+  BOT_ROUTER_SEED: "false"
+  BOT_LOGIN_CODES_SEED: "false"
+  BOT_MEMORY_MAX_CHARS: "200"

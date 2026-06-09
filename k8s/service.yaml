@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: octotask-ai-public
+  namespace: octotask-ai
+  annotations:
+    oci.oraclecloud.com/load-balancer-type: "lb"
+spec:
+  type: LoadBalancer
+  selector:
+    app: octotask-ai
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8080

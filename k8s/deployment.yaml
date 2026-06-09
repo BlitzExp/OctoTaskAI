@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: octotask-ai
+  namespace: octotask-ai
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: octotask-ai
+  template:
+    metadata:
+      labels:
+        app: octotask-ai
+    spec:
+      imagePullSecrets:
+        - name: ocir-secret
+
+      volumes:
+        - name: wallet-atp
+          secret:
+            secretName: wallet-atp
+        - name: wallet-aidb
+          secret:
+            secretName: wallet-aidb
+        - name: ollama-data
+          emptyDir: {}
+
+      containers:
+        - name: ollama
+          image: docker.io/ollama/ollama:latest
+          ports:
+            - containerPort: 11434
+          volumeMounts:
+            - name: ollama-data
+              mountPath: /root/.ollama
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              ollama serve &
+              sleep 15
+              ollama pull qwen2.5:1.5b-instruct
+              wait
+          resources:
+            requests:
+              cpu: "1"
+              memory: "4Gi"
+            limits:
+              cpu: "2"
+              memory: "8Gi"
+
+        - name: octotask-ai
+          image: mx-queretaro-1.ocir.io/axyjwyhvlyvr/octotask-ai/octotask-ai:latest
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: octotask-ai-config
+            - secretRef:
+                name: octotask-ai-secrets
+          volumeMounts:
+            - name: wallet-atp
+              mountPath: /app/wallet/ATP
+              readOnly: true
+            - name: wallet-aidb
+              mountPath: /app/wallet/AIDB
+              readOnly: true
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "3Gi"
