@@ -38,6 +38,24 @@ steps:
       echo "Image URL: ${IMAGE_URL}"
 
   - type: Command
+    name: "Install and Pull Git LFS Files"
+    command: |
+      set -e
+
+      echo "Checking Git LFS availability..."
+      git lfs version || true
+
+      echo "Installing Git LFS if available..."
+      git lfs install || true
+
+      echo "Pulling Git LFS files..."
+      git lfs pull
+
+      echo "Checking ONNX files..."
+      find . -name "*.onnx" -exec ls -lh {} \;
+
+      
+  - type: Command
     name: "Prepare Maven Wrapper"
     command: |
       set -e
