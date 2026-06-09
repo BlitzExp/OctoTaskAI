@@ -35,8 +35,8 @@ public class GeminiClient {
 
     /**
      * Ask Gemini what to do with the user's text. Returns either:
-     *   - "TOOL_REQUESTED|<name>|<argsJson>" if Gemini wants to invoke a tool, or
-     *   - the plain text reply otherwise.
+     * - "TOOL_REQUESTED|<name>|<argsJson>" if Gemini wants to invoke a tool, or
+     * - the plain text reply otherwise.
      */
     public String askGemini(String promptText) {
         try {
@@ -70,17 +70,19 @@ public class GeminiClient {
     /** Turn raw DB data into a user-friendly Telegram reply. */
     public String summarizeData(String userOriginalQuestion, String rawDatabaseData) {
         try {
-            String prompt =
-                "You are a strict data-reporting Telegram bot. " +
-                "The user asked: '" + userOriginalQuestion + "'. " +
-                "The database returned this raw data: " + rawDatabaseData + ". " +
-                "Draft the exact, final text message to send back to the user. " +
-                "STRICT RULES: \n" +
-                "1. EXACT MATCH: You must use the EXACT task names, descriptions, and statuses exactly as they appear in the raw data. Do NOT reword, paraphrase, or summarize them.\n" +
-                "2. If the data is STATISTICS or KPIs, act like a data analyst. Format it beautifully with bullet points, and short, insightful summaries of the numbers.\n" +
-                "3. NO TRUNCATION: You must list EVERY SINGLE item provided in the raw data. If the database returns 32 items, you must list all 32. Do NOT stop at 10, do NOT say 'and more', do NOT skip any data.\n" +
-                "4. NO META-TEXT: Do not provide multiple options or explain your formatting.\n" +
-                "5. FORMATTING: Output ONLY the final response. Format it clearly using bullet points or numbers so it is easy to read on a mobile phone.";
+            String prompt = "You are a strict data-reporting Telegram bot. " +
+                    "The user asked: '" + userOriginalQuestion + "'. " +
+                    "The database returned this raw data: " + rawDatabaseData + ". " +
+                    "Draft the exact, final text message to send back to the user. " +
+                    "STRICT RULES: \n" +
+                    "1. EXACT MATCH: You must use the EXACT task names, descriptions, and statuses exactly as they appear in the raw data. Do NOT reword, paraphrase, or summarize them.\n"
+                    +
+                    "2. If the data is STATISTICS or KPIs, act like a data analyst. Format it beautifully with bullet points, and short, insightful summaries of the numbers.\n"
+                    +
+                    "3. NO TRUNCATION: You must list EVERY SINGLE item provided in the raw data. If the database returns 32 items, you must list all 32. Do NOT stop at 10, do NOT say 'and more', do NOT skip any data.\n"
+                    +
+                    "4. NO META-TEXT: Do not provide multiple options or explain your formatting.\n" +
+                    "5. FORMATTING: Output ONLY the final response. Format it clearly using bullet points or numbers so it is easy to read on a mobile phone.";
 
             ObjectNode body = mapper.createObjectNode();
             body.putArray("contents").addObject().putArray("parts").addObject().put("text", prompt);
