@@ -42,19 +42,35 @@ steps:
     command: |
       set -e
 
-      echo "Checking Git LFS availability..."
-      git lfs version || true
+      echo "Installing Git LFS..."
 
-      echo "Installing Git LFS if available..."
-      git lfs install || true
+      if command -v dnf >/dev/null 2>&1; then
+        dnf install -y git-lfs
+      elif command -v yum >/dev/null 2>&1; then
+        yum install -y git-lfs
+      elif command -v microdnf >/dev/null 2>&1; then
+        microdnf install -y git-lfs
+      elif command -v apt-get >/dev/null 2>&1; then
+        apt-get update
+        apt-get install -y git-lfs
+      else
+        echo "No supported package manager found to install git-lfs"
+        exit 1
+      fi
+
+      echo "Git LFS version:"
+      git lfs version
+
+      echo "Initializing Git LFS..."
+      git lfs install
 
       echo "Pulling Git LFS files..."
       git lfs pull
 
-      echo "Checking ONNX files..."
+      echo "Checking ONNX files after Git LFS pull..."
       find . -name "*.onnx" -exec ls -lh {} \;
 
-      
+
   - type: Command
     name: "Prepare Maven Wrapper"
     command: |
