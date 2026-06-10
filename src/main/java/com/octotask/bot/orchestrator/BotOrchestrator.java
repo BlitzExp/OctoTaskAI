@@ -137,13 +137,13 @@ public class BotOrchestrator {
         // Debug: inform the user which backend function was selected and the
         // most similar example that led to that choice.
 
-        if (decision.isPresent()) {
+        /* if (decision.isPresent()) {
             var d = decision.get();
             String example = d.getMatchedExample() == null ? "" : d.getMatchedExample();
             telegram.sendMessage(chatId, "DEBUG: función seleccionada: " +
                     d.getToolName() +
                     " -- ejemplo similar: " + example);
-        }
+        } */
 
         if (decision.isEmpty()) {
             respond(chatId,
