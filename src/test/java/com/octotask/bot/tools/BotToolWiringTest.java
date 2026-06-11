@@ -35,7 +35,8 @@ class BotToolWiringTest {
                 new GetTopPriorityTaskTool(client),
                 new GetUserKpisTool(client),
                 new GetTeamKpisTool(client),
-                new GetSprintAnalyticsTool(client)
+                new GetSprintAnalyticsTool(client),
+                new GetDailyBriefingTool(client)
         );
 
         for (BotTool tool : tools) {
