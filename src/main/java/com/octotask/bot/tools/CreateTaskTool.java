@@ -81,7 +81,7 @@ public class CreateTaskTool implements BotTool {
         if (result instanceof Task t) {
             StringBuilder sb = new StringBuilder("✅ Tarea creada: #").append(t.getID())
                     .append(" «").append(t.getName()).append("»\n")
-                    .append("• Sprint: ").append(t.getSprintID()).append("\n")
+                    .append("• Sprint: ").append(t.getSprintNumber()).append("\n")
                     .append("• Prioridad: ").append(t.getPriorityID()).append("\n")
                     .append("• Asignada a: ")
                     .append(t.getUserName() != null ? t.getUserName() : t.getUserID());

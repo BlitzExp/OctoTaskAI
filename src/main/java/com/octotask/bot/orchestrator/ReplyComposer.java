@@ -79,7 +79,9 @@ public class ReplyComposer {
                     "7) No expliques tu formato ni tus reglas. " +
                     "8) Si los datos JSON contienen un campo numérico de identificador de tarea (por ejemplo " +
                     "\"ID\" o \"id\"), inclúyelo explícitamente en la respuesta como \"taskId: <valor>\" " +
-                    "junto al registro correspondiente.";
+                    "junto al registro correspondiente. " +
+                    "9) Si los datos contienen 'sprintNumber' y 'sprintID', usa siempre 'sprintNumber' " +
+                    "para referirte al sprint (escríbelo como \"Sprint N\") — nunca uses el ID interno.";
             String history = (conversationContext == null || conversationContext.isBlank())
                     ? ""
                     : "Contexto reciente de la conversación:\n" + conversationContext + "\n\n";

@@ -250,17 +250,27 @@ public class ToolArgumentResolver {
 
     private static final java.util.Set<String> GENERIC_NOISE = java.util.Set.of(
             "tarea", "tareas", "una tarea", "nueva tarea", "la tarea",
-            "task", "a task", "new task", "the task");
+            "task", "a task", "new task", "the task",
+            "crear una tarea", "crea una tarea", "crear tarea", "crea tarea",
+            "una nueva tarea", "crear una nueva tarea", "crea una nueva tarea",
+            "agregar tarea", "agrega tarea", "agrega una tarea", "agregar una tarea");
+
+    private static final java.util.regex.Pattern CREATE_TASK_VERB =
+            java.util.regex.Pattern.compile("(crea[r]?|agrega[r]?|add|creat[e]?)\\b.*\\b(tarea[s]?|task[s]?)\\b.*");
 
     /**
-     * True if the text is just a filler/command word, not a real user-supplied
-     * value.
+     * True if the text is just a filler/command word, not a real user-supplied value.
+     * Prevents small LLMs from echoing the command phrase (e.g. "crea una tarea") as
+     * the task name when no explicit name was given.
      */
     private static boolean isGenericNoise(String text) {
         if (text == null)
             return true;
         String t = text.trim().toLowerCase();
-        return t.isEmpty() || GENERIC_NOISE.contains(t);
+        if (t.isEmpty() || GENERIC_NOISE.contains(t))
+            return true;
+        // Catch LLM variants not in the exact set: "crea[r]/agrega[r]/add/create ... tarea/task"
+        return CREATE_TASK_VERB.matcher(t).matches();
     }
 
     /** Pull the first {...} block out of an LLM response and parse it. */
