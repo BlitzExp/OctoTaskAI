@@ -4,6 +4,7 @@ import com.octotask.bot.data.model.AppUser;
 import com.octotask.bot.data.model.CreateTask;
 import com.octotask.bot.data.model.Task;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
@@ -27,6 +28,13 @@ public interface OctoTaskDataClient {
     List<Task> getPendingTasksByUserName(String userName);
     Task       getTopPriorityTask(String userName);
 
+    /**
+     * The id of the most recent sprint of the team the given user belongs to,
+     * or {@code null} if the user's team has no sprints. Used so creating a task
+     * defaults to the team's current sprint instead of asking the user for it.
+     */
+    Integer    getLatestSprintIdForUser(int userId);
+
     List<Map<String, Object>> getTeamMembers(long teamId);
 
     int        getLateTasksBySprint(int teamId, int sprintId);
@@ -36,5 +44,10 @@ public interface OctoTaskDataClient {
 
     // --- Writes ---
     Task createTask(CreateTask data);
-    int  markTaskCompleted(int taskId);
+
+    /**
+     * Mark a task DONE and record the hours the user spent on it.
+     * @return the number of rows updated (1 on success).
+     */
+    int  markTaskCompleted(int taskId, BigDecimal hoursWorked);
 }

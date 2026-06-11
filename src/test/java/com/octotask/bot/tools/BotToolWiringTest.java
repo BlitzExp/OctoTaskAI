@@ -3,10 +3,13 @@ package com.octotask.bot.tools;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.octotask.bot.data.OctoTaskDataClient;
+import com.octotask.bot.data.model.CreateTask;
 import com.octotask.bot.data.model.Task;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 
+import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.List;
 
@@ -35,7 +38,8 @@ class BotToolWiringTest {
                 new GetTopPriorityTaskTool(client),
                 new GetUserKpisTool(client),
                 new GetTeamKpisTool(client),
-                new GetSprintAnalyticsTool(client)
+                new GetSprintAnalyticsTool(client),
+                new GetDailyBriefingTool(client)
         );
 
         for (BotTool tool : tools) {
@@ -63,16 +67,59 @@ class BotToolWiringTest {
     }
 
     @Test
-    void completeTaskToolReturnsSuccessMessage() throws Exception {
+    void completeTaskToolRecordsHoursAndReturnsSuccessMessage() throws Exception {
         OctoTaskDataClient client = Mockito.mock(OctoTaskDataClient.class);
-        Mockito.when(client.markTaskCompleted(42)).thenReturn(1);
+        Mockito.when(client.markTaskCompleted(42, new BigDecimal("3"))).thenReturn(1);
         CompleteTaskTool tool = new CompleteTaskTool(client);
 
         ObjectNode args = mapper.createObjectNode();
         args.put("taskId", 42);
+        args.put("hoursWorked", 3);
         Object result = tool.execute(args);
 
-        assertThat(result.toString()).contains("42").contains("completed");
+        Mockito.verify(client).markTaskCompleted(42, new BigDecimal("3"));
+        assertThat(tool.successMessage(result)).contains("42").contains("completada").contains("3 h");
+    }
+
+    @Test
+    void createTaskDefaultsToTeamsLatestSprintWhenNotProvided() throws Exception {
+        OctoTaskDataClient client = Mockito.mock(OctoTaskDataClient.class);
+        Mockito.when(client.getLatestSprintIdForUser(7)).thenReturn(9);
+        Mockito.when(client.createTask(Mockito.any(CreateTask.class))).thenReturn(new Task());
+        CreateTaskTool tool = new CreateTaskTool(client);
+
+        ObjectNode args = mapper.createObjectNode();
+        args.put("name", "Arreglar login");
+        args.put("description", "El login truena con SSO");
+        args.put("assigneeId", 7);
+        args.put("priority", 1);
+        // no sprintId -> should fall back to the team's latest sprint
+        tool.execute(args);
+
+        ArgumentCaptor<CreateTask> captor = ArgumentCaptor.forClass(CreateTask.class);
+        Mockito.verify(client).createTask(captor.capture());
+        assertThat(captor.getValue().getSprintId()).isEqualTo(9);
+        Mockito.verify(client).getLatestSprintIdForUser(7);
+    }
+
+    @Test
+    void createTaskUsesExplicitSprintIdWhenProvided() throws Exception {
+        OctoTaskDataClient client = Mockito.mock(OctoTaskDataClient.class);
+        Mockito.when(client.createTask(Mockito.any(CreateTask.class))).thenReturn(new Task());
+        CreateTaskTool tool = new CreateTaskTool(client);
+
+        ObjectNode args = mapper.createObjectNode();
+        args.put("name", "Arreglar login");
+        args.put("description", "El login truena con SSO");
+        args.put("assigneeId", 7);
+        args.put("priority", 1);
+        args.put("sprintId", 3);
+        tool.execute(args);
+
+        ArgumentCaptor<CreateTask> captor = ArgumentCaptor.forClass(CreateTask.class);
+        Mockito.verify(client).createTask(captor.capture());
+        assertThat(captor.getValue().getSprintId()).isEqualTo(3);
+        Mockito.verify(client, Mockito.never()).getLatestSprintIdForUser(Mockito.anyInt());
     }
 
     @Test

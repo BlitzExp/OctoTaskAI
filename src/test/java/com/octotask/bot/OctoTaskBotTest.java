@@ -22,6 +22,7 @@ import com.octotask.bot.login.LoginService;
 import com.octotask.bot.orchestrator.BotOrchestrator;
 import com.octotask.bot.orchestrator.ConversationMemory;
 import com.octotask.bot.orchestrator.PendingActionStore;
+import com.octotask.bot.orchestrator.PendingClarificationStore;
 import com.octotask.bot.orchestrator.ReplyComposer;
 import com.octotask.bot.orchestrator.ToolArgumentResolver;
 import com.octotask.bot.router.SemanticRouter;
@@ -44,8 +45,9 @@ public class OctoTaskBotTest {
     @Mock private ConversationMemory memory;
     @Mock private BotTool getPendingTasksTool;
 
-    // Real store so multi-turn state actually persists across messages.
+    // Real stores so multi-turn / clarification state actually persists across messages.
     private final PendingActionStore pending = new PendingActionStore();
+    private final PendingClarificationStore clarifications = new PendingClarificationStore();
     private final ObjectMapper mapper = new ObjectMapper();
     private BotOrchestrator orchestrator;
 
@@ -55,7 +57,7 @@ public class OctoTaskBotTest {
     void setUp() {
         lenient().when(getPendingTasksTool.getName()).thenReturn("get_pending_tasks");
         List<BotTool> tools = List.of(getPendingTasksTool);
-        orchestrator = new BotOrchestrator(telegram, tools, loginService, router, resolver, composer, memory, pending);
+        orchestrator = new BotOrchestrator(telegram, tools, loginService, router, resolver, composer, memory, pending, clarifications);
     }
 
     @Test
@@ -72,8 +74,8 @@ public class OctoTaskBotTest {
     public void loggedInUserGetsRoutedAndAnswered() throws Exception {
         BotUserLink identity = new BotUserLink(CHAT, 7, "Diego", 3);
         when(loginService.current(CHAT)).thenReturn(identity);
-        when(router.route(anyString()))
-                .thenReturn(Optional.of(new SemanticRouter.Decision("get_pending_tasks", 0.9, "mis pendientes")));
+        when(router.classify(anyString()))
+                .thenReturn(SemanticRouter.Routing.confident(new SemanticRouter.Decision("get_pending_tasks", 0.9, "mis pendientes")));
 
         ToolArgumentResolver.Resolution resolution =
                 new ToolArgumentResolver.Resolution(mapper.createObjectNode().put("userName", "Diego"), List.of());
@@ -91,8 +93,8 @@ public class OctoTaskBotTest {
     public void missingRequiredArgsAsksUserInsteadOfExecuting() throws Exception {
         BotUserLink identity = new BotUserLink(CHAT, 7, "Diego", 3);
         when(loginService.current(CHAT)).thenReturn(identity);
-        when(router.route(anyString()))
-                .thenReturn(Optional.of(new SemanticRouter.Decision("get_pending_tasks", 0.9, "x")));
+        when(router.classify(anyString()))
+                .thenReturn(SemanticRouter.Routing.confident(new SemanticRouter.Decision("get_pending_tasks", 0.9, "x")));
 
         ToolArgumentResolver.Resolution resolution =
                 new ToolArgumentResolver.Resolution(mapper.createObjectNode(), List.of("sprintId"));
@@ -108,7 +110,7 @@ public class OctoTaskBotTest {
     public void lowConfidenceRouteFallsBackToHelp() {
         BotUserLink identity = new BotUserLink(CHAT, 7, "Diego", 3);
         when(loginService.current(CHAT)).thenReturn(identity);
-        when(router.route(anyString())).thenReturn(Optional.empty());
+        when(router.classify(anyString())).thenReturn(SemanticRouter.Routing.none());
 
         orchestrator.processIncomingMessage(CHAT, "blah blah");
 
@@ -121,8 +123,8 @@ public class OctoTaskBotTest {
         when(loginService.current(CHAT)).thenReturn(identity);
 
         // Turn 1: routes to the tool but a required field is missing -> ask + remember.
-        when(router.route(anyString()))
-                .thenReturn(Optional.of(new SemanticRouter.Decision("get_pending_tasks", 0.9, "create")));
+        when(router.classify(anyString()))
+                .thenReturn(SemanticRouter.Routing.confident(new SemanticRouter.Decision("get_pending_tasks", 0.9, "create")));
         ToolArgumentResolver.Resolution incomplete =
                 new ToolArgumentResolver.Resolution(mapper.createObjectNode().put("name", "Test"), List.of("sprintId"));
         when(resolver.resolve(eq(getPendingTasksTool), eq(identity), anyString(), any())).thenReturn(incomplete);
@@ -147,7 +149,7 @@ public class OctoTaskBotTest {
         verify(getPendingTasksTool).execute(any(JsonNode.class));
         verify(telegram).sendMessage(eq(CHAT), eq("Tarea creada ✅"));
         // Router is only consulted on turn 1, never for the follow-up.
-        verify(router, times(1)).route(anyString());
+        verify(router, times(1)).classify(anyString());
         org.junit.jupiter.api.Assertions.assertFalse(pending.has(CHAT));
     }
 
@@ -155,8 +157,8 @@ public class OctoTaskBotTest {
     public void cancelClearsPendingAction() {
         BotUserLink identity = new BotUserLink(CHAT, 7, "Diego", 3);
         when(loginService.current(CHAT)).thenReturn(identity);
-        when(router.route(anyString()))
-                .thenReturn(Optional.of(new SemanticRouter.Decision("get_pending_tasks", 0.9, "create")));
+        when(router.classify(anyString()))
+                .thenReturn(SemanticRouter.Routing.confident(new SemanticRouter.Decision("get_pending_tasks", 0.9, "create")));
         ToolArgumentResolver.Resolution incomplete =
                 new ToolArgumentResolver.Resolution(mapper.createObjectNode(), List.of("sprintId"));
         when(resolver.resolve(eq(getPendingTasksTool), eq(identity), anyString(), any())).thenReturn(incomplete);
@@ -168,5 +170,61 @@ public class OctoTaskBotTest {
 
         org.junit.jupiter.api.Assertions.assertFalse(pending.has(CHAT));
         verify(telegram).sendMessage(eq(CHAT), contains("cancelé la acción en curso"));
+    }
+
+    @Test
+    public void ambiguousRouteAsksToChooseThenRunsChoice() throws Exception {
+        BotUserLink identity = new BotUserLink(CHAT, 7, "Diego", 3);
+        when(loginService.current(CHAT)).thenReturn(identity);
+
+        // Two intents nearly tied -> the bot must ask which, not guess.
+        when(router.classify(anyString())).thenReturn(SemanticRouter.Routing.ambiguous(
+                new SemanticRouter.Decision("get_pending_tasks", 0.70, "a"),
+                new SemanticRouter.Decision("get_user_tasks", 0.68, "b")));
+
+        orchestrator.processIncomingMessage(CHAT, "muéstrame tareas");
+
+        verify(telegram).sendMessage(eq(CHAT), contains("1)"));
+        org.junit.jupiter.api.Assertions.assertTrue(clarifications.has(CHAT));
+
+        // User picks option 1 -> run get_pending_tasks against the ORIGINAL message.
+        ToolArgumentResolver.Resolution complete =
+                new ToolArgumentResolver.Resolution(mapper.createObjectNode().put("userName", "Diego"), List.of());
+        when(resolver.resolve(eq(getPendingTasksTool), eq(identity), anyString(), any())).thenReturn(complete);
+        when(getPendingTasksTool.execute(any(JsonNode.class))).thenReturn(List.of());
+        when(composer.compose(anyString(), any(), any())).thenReturn("Aquí están tus pendientes");
+
+        orchestrator.processIncomingMessage(CHAT, "1");
+
+        verify(getPendingTasksTool).execute(any(JsonNode.class));
+        verify(telegram).sendMessage(eq(CHAT), eq("Aquí están tus pendientes"));
+        org.junit.jupiter.api.Assertions.assertFalse(clarifications.has(CHAT));
+    }
+
+    @Test
+    public void lowConfidenceAsksToConfirmThenRunsOnYes() throws Exception {
+        BotUserLink identity = new BotUserLink(CHAT, 7, "Diego", 3);
+        when(loginService.current(CHAT)).thenReturn(identity);
+
+        // Weak winner -> confirm before acting.
+        when(router.classify(anyString())).thenReturn(SemanticRouter.Routing.lowConfidence(
+                new SemanticRouter.Decision("get_pending_tasks", 0.50, "weak")));
+
+        orchestrator.processIncomingMessage(CHAT, "vuelve a intentar");
+
+        verify(telegram).sendMessage(eq(CHAT), contains("¿Es correcto?"));
+        org.junit.jupiter.api.Assertions.assertTrue(clarifications.has(CHAT));
+
+        ToolArgumentResolver.Resolution complete =
+                new ToolArgumentResolver.Resolution(mapper.createObjectNode().put("userName", "Diego"), List.of());
+        when(resolver.resolve(eq(getPendingTasksTool), eq(identity), anyString(), any())).thenReturn(complete);
+        when(getPendingTasksTool.execute(any(JsonNode.class))).thenReturn(List.of());
+        when(composer.compose(anyString(), any(), any())).thenReturn("Listo");
+
+        orchestrator.processIncomingMessage(CHAT, "sí");
+
+        verify(getPendingTasksTool).execute(any(JsonNode.class));
+        verify(telegram).sendMessage(eq(CHAT), eq("Listo"));
+        org.junit.jupiter.api.Assertions.assertFalse(clarifications.has(CHAT));
     }
 }

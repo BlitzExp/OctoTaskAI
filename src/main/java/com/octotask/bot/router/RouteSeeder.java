@@ -54,6 +54,11 @@ public class RouteSeeder implements ApplicationRunner {
         put("get_top_priority_task", List.of(
                 "qué hago primero", "cuál es mi tarea más importante", "en qué debería trabajar ahora",
                 "what should I work on next", "my highest priority task"));
+        put("get_daily_briefing", List.of(
+                "resumen", "dame un resumen", "mi resumen del día", "resumen de mi día",
+                "ponme al día", "ponme al corriente", "qué tengo para hoy", "briefing",
+                "my daily briefing", "catch me up", "give me a summary of my day",
+                "what's on my plate today"));
         put("get_user_kpis", List.of(
                 "mis estadísticas", "mis kpis", "muéstrame mis kpis", "muéstrame mis estadísticas",
                 "ver mis kpis", "mis indicadores", "cómo voy", "cuántas horas he trabajado",

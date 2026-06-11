@@ -98,6 +98,17 @@ public class JdbcOctoTaskDataClient implements OctoTaskDataClient {
     }
 
     @Override
+    public Integer getLatestSprintIdForUser(int userId) {
+        String sql = "SELECT s.id FROM SPRINT s " +
+                "JOIN APP_USER u ON u.team_id = s.team_id " +
+                "WHERE u.id = ? " +
+                "ORDER BY s.sprint_num DESC, s.end_date DESC " +
+                "FETCH FIRST 1 ROWS ONLY";
+        List<Integer> ids = jdbc.query(sql, (rs, n) -> rs.getInt("id"), userId);
+        return ids.isEmpty() ? null : ids.get(0);
+    }
+
+    @Override
     public List<Map<String, Object>> getTeamMembers(long teamId) {
         String sql = "SELECT ID AS \"id\", NAME AS \"name\" FROM APP_USER WHERE TEAM_ID = ?";
         return jdbc.queryForList(sql, teamId);
@@ -200,9 +211,10 @@ public class JdbcOctoTaskDataClient implements OctoTaskDataClient {
     }
 
     @Override
-    public int markTaskCompleted(int taskId) {
-        String sql = "UPDATE TASKS SET state_id = 1 WHERE id = ?";
-        int rowsAffected = jdbc.update(sql, taskId);
+    public int markTaskCompleted(int taskId, BigDecimal hoursWorked) {
+        BigDecimal hours = hoursWorked != null ? hoursWorked : BigDecimal.ZERO;
+        String sql = "UPDATE TASKS SET state_id = 1, spent_hours = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?";
+        int rowsAffected = jdbc.update(sql, hours, taskId);
         if (rowsAffected == 0) {
             throw new IllegalStateException("Could not find a task with ID " + taskId);
         }

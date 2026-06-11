@@ -5,16 +5,25 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.octotask.bot.ai.LlmService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 /**
- * Turns raw tool/DB output into a human-friendly Telegram reply. Uses the local
- * LLM when available, and falls back to a deterministic templated rendering so
- * the bot still answers when the LLM is offline.
+ * Turns raw tool/DB output into a human-friendly Telegram reply.
+ *
+ * <p>Small, conversational results are phrased by the local LLM. Large results
+ * (long lists of tasks, big JSON) are rendered by a fast, deterministic
+ * formatter and paginated — the local 1.5B model takes far longer than the
+ * Telegram-friendly timeout to generate thousands of characters, and prose adds
+ * nothing to "here are 40 tasks". The deterministic path also runs whenever the
+ * LLM is offline, so the bot always answers.
  */
 @Component
 public class ReplyComposer {
@@ -23,6 +32,15 @@ public class ReplyComposer {
 
     private final ObjectMapper mapper;
     private final LlmService llm;
+
+    // Above this serialized-JSON size we skip the LLM and render deterministically.
+    // Field defaults keep plain (non-Spring) construction working in tests.
+    @Value("${bot.reply.llm-max-chars:1000}")
+    private int llmMaxChars = 1000;
+
+    // How many list items to show before collapsing the rest into "…y N más".
+    @Value("${bot.reply.list-page-size:10}")
+    private int listPageSize = 10;
 
     public ReplyComposer(ObjectMapper mapper, Optional<LlmService> llm) {
         this.mapper = mapper;
@@ -41,7 +59,12 @@ public class ReplyComposer {
             json = String.valueOf(rawData);
         }
 
-        if (llm != null && llm.isAvailable()) {
+        // Large/list payloads: skip the slow LLM and render deterministically.
+        // This is the fix for the 30s Ollama read-timeouts on big result sets.
+        boolean large = json.length() > llmMaxChars
+                || (rawData instanceof Collection<?> c && c.size() > listPageSize);
+
+        if (!large && llm != null && llm.isAvailable()) {
             String system = "Eres el asistente de OctoTask en Telegram. " +
                     "Redacta la respuesta final para el usuario en español, clara y breve, " +
                     "fácil de leer en el teléfono (usa viñetas o numeración cuando ayude). " +
@@ -67,22 +90,30 @@ public class ReplyComposer {
             String out = llm.generate(system, prompt);
             if (out != null && !out.isBlank())
                 return out.trim();
-            log.debug("LLM phrasing unavailable; using templated fallback");
+            log.debug("LLM phrasing unavailable; using deterministic formatter");
+        } else if (large) {
+            log.debug("Large payload ({} chars); using deterministic formatter, skipping LLM", json.length());
         }
         return templated(rawData, json);
     }
 
-    /** Deterministic rendering used when the LLM is down. */
+    /** Fast, mobile-friendly rendering: numbered list, paginated, no LLM. */
     private String templated(Object rawData, String json) {
         try {
             JsonNode node = mapper.valueToTree(rawData);
             if (node.isArray()) {
-                if (node.isEmpty())
+                int total = node.size();
+                if (total == 0)
                     return "No encontré resultados.";
-                StringBuilder sb = new StringBuilder("Resultados (" + node.size() + "):\n");
-                int i = 1;
-                for (JsonNode item : node) {
-                    sb.append(i++).append(". ").append(renderItem(item)).append("\n");
+                StringBuilder sb = new StringBuilder();
+                sb.append("📋 ").append(total).append(total == 1 ? " resultado:" : " resultados:").append("\n");
+                int shown = Math.min(total, listPageSize);
+                for (int i = 0; i < shown; i++) {
+                    sb.append(i + 1).append(". ").append(renderItem(node.get(i))).append("\n");
+                }
+                if (total > shown) {
+                    sb.append("…y ").append(total - shown).append(" más. ")
+                            .append("Puedes acotar (p. ej. \"mis tareas del sprint 3\").");
                 }
                 return sb.toString().trim();
             }
@@ -98,32 +129,55 @@ public class ReplyComposer {
     private String renderItem(JsonNode item) {
         if (!item.isObject())
             return item.asText();
-        // Prefer a name/title field if present
-        if (item.has("name")) {
-            String s = item.get("name").asText();
-            if (item.has("description") && !item.get("description").isNull()) {
-                s += " — " + item.get("description").asText();
-            }
-            // Append ID if present so users can reference it
-            if (item.has("ID")) {
-                s += " (taskId:" + item.get("ID").asText() + ")";
-            } else if (item.has("id")) {
-                s += " (taskId:" + item.get("id").asText() + ")";
-            }
-            return s;
+
+        // Task/named record: "#12 Arreglar login — descripción (prioridad 1 · sprint 3)"
+        if (item.hasNonNull("name")) {
+            StringBuilder s = new StringBuilder();
+            String id = firstText(item, "ID", "id");
+            if (id != null)
+                s.append("#").append(id).append(" ");
+            s.append(item.get("name").asText());
+            String desc = firstText(item, "description");
+            if (desc != null && !desc.isBlank())
+                s.append(" — ").append(trimTo(desc, 80));
+            List<String> tags = new ArrayList<>();
+            if (item.has("priorityID") && item.get("priorityID").asInt() > 0)
+                tags.add("prioridad " + item.get("priorityID").asInt());
+            if (item.has("sprintNumber") && item.get("sprintNumber").asInt() > 0)
+                tags.add("sprint " + item.get("sprintNumber").asInt());
+            if (!tags.isEmpty())
+                s.append(" (").append(String.join(" · ", tags)).append(")");
+            return s.toString();
         }
+
+        // Generic object: compact, non-null key=value, ID relabelled as taskId.
         StringBuilder sb = new StringBuilder();
         Iterator<Map.Entry<String, JsonNode>> it = item.fields();
         while (it.hasNext()) {
             Map.Entry<String, JsonNode> e = it.next();
+            if (e.getValue() == null || e.getValue().isNull())
+                continue;
             if (sb.length() > 0)
                 sb.append(", ");
             String key = e.getKey();
-            // Present ID fields as taskId for clarity
             if ("ID".equals(key) || "id".equals(key))
                 key = "taskId";
             sb.append(key).append("=").append(e.getValue().asText());
         }
         return sb.toString();
+    }
+
+    /** First non-null textual value among the given field names, or null. */
+    private static String firstText(JsonNode item, String... keys) {
+        for (String k : keys) {
+            if (item.hasNonNull(k))
+                return item.get(k).asText();
+        }
+        return null;
+    }
+
+    private static String trimTo(String s, int max) {
+        s = s.trim();
+        return s.length() <= max ? s : s.substring(0, max - 1).trim() + "…";
     }
 }

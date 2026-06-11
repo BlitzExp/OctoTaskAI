@@ -19,13 +19,11 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
-<<<<<<< HEAD
 
+# Terraform — never commit state or vars (may contain secrets)
 terraform/.terraform/
 terraform/terraform.tfstate
 terraform/terraform.tfstate.backup
 terraform/*.tfstate
 terraform/*.tfstate.*
 terraform/terraform.tfvars
-=======
->>>>>>> 41e62851987eb2c671793f72432cedc9b270fc77
