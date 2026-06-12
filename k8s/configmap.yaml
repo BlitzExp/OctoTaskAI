@@ -16,3 +16,12 @@ data:
   BOT_ROUTER_SEED: "true"
   BOT_LOGIN_CODES_SEED: "false"
   BOT_MEMORY_MAX_CHARS: "200"
+
+  # Routing confidence tuning. Loosened from the application.properties
+  # defaults (0.06 / 0.58) so the bot commits to its top match instead of
+  # asking "¿te refieres a…?" on near-synonym phrasings (e.g. "tareas" vs
+  # "tareas pendientes"), which the multilingual embedding model naturally
+  # clusters within ~0.06. Raise back toward the defaults for more cautious
+  # production behavior.
+  BOT_ROUTER_AMBIGUITY_MARGIN: "0.03"
+  BOT_ROUTER_CONFIRM_BELOW: "0.50"
