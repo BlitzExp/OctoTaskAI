@@ -123,6 +123,38 @@ class BotToolWiringTest {
     }
 
     @Test
+    void lateTasksToolDefaultsToTeamsCurrentSprintWhenNoNumberGiven() throws Exception {
+        OctoTaskDataClient client = Mockito.mock(OctoTaskDataClient.class);
+        Mockito.when(client.getLatestSprintIdForTeam(7)).thenReturn(9);
+        Mockito.when(client.getLateTasksBySprint(7, 9)).thenReturn(4);
+        GetLateTasksTool tool = new GetLateTasksTool(client);
+
+        ObjectNode args = mapper.createObjectNode();
+        args.put("teamId", 7); // sprintNumber omitted -> current sprint
+        tool.execute(args);
+
+        Mockito.verify(client).getLatestSprintIdForTeam(7);
+        Mockito.verify(client).getLateTasksBySprint(7, 9);
+    }
+
+    @Test
+    void lateTasksToolTranslatesSprintNumberToId() throws Exception {
+        OctoTaskDataClient client = Mockito.mock(OctoTaskDataClient.class);
+        Mockito.when(client.getSprintIdByNumber(7, 3)).thenReturn(15);
+        Mockito.when(client.getLateTasksBySprint(7, 15)).thenReturn(2);
+        GetLateTasksTool tool = new GetLateTasksTool(client);
+
+        ObjectNode args = mapper.createObjectNode();
+        args.put("teamId", 7);
+        args.put("sprintNumber", 3); // user says "sprint 3" -> id 15
+        tool.execute(args);
+
+        Mockito.verify(client).getSprintIdByNumber(7, 3);
+        Mockito.verify(client).getLateTasksBySprint(7, 15);
+        Mockito.verify(client, Mockito.never()).getLatestSprintIdForTeam(Mockito.anyInt());
+    }
+
+    @Test
     void getUserKpisToolPassesUserName() throws Exception {
         OctoTaskDataClient client = Mockito.mock(OctoTaskDataClient.class);
         Mockito.when(client.getUserKpis("alice")).thenReturn(new HashMap<>());

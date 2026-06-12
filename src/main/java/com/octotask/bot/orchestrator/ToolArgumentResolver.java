@@ -95,12 +95,13 @@ public class ToolArgumentResolver {
             extractWithLlm(args, properties, toExtract, userText, conversationContext);
         }
 
-        // 3b) Fallback: if required numeric fields are still missing, try to
-        // parse them directly from the user's latest message (e.g. user replies
-        // with "42"). This helps when the LLM is unavailable or fails to
-        // extract simple numeric answers during slot filling.
-        if (!toExtract.isEmpty()) {
-            parseNumericFallback(args, properties, toExtract, userText);
+        // 3b) Fallback: when the user is answering a slot-fill question (seedArgs
+        // present) and the LLM didn't extract the value, parse a bare number from
+        // the reply (e.g. user replies "42" to "which task id?"). Only on slot-fill
+        // replies, never on the first parse — otherwise a number in the original
+        // command ("...prioridad 2") gets smeared across other numeric fields.
+        if (!toExtract.isEmpty() && seedArgs != null) {
+            parseNumericFallback(args, properties, toExtract, required, userText);
         }
 
         // 4) which required fields are still missing?
@@ -113,51 +114,41 @@ public class ToolArgumentResolver {
     }
 
     /**
-     * Try to find integer/number values in the user's text for still-missing
-     * numeric fields and inject them into args.
+     * Parse a bare number from a slot-fill reply into the one numeric field still
+     * being asked for. Deliberately conservative: it only fills a <em>required</em>
+     * field, and only when <em>exactly one</em> numeric required field is missing —
+     * a lone number is ambiguous otherwise and must never be copied into several
+     * fields (which previously set sprintId from a priority value, etc.).
      */
-    private void parseNumericFallback(ObjectNode args, JsonNode properties, List<String> fields, String userText) {
+    private void parseNumericFallback(ObjectNode args, JsonNode properties, List<String> fields,
+            List<String> required, String userText) {
         if (userText == null || userText.isBlank())
             return;
-        // find first integer and first decimal number
-        java.util.regex.Matcher intMatcher = java.util.regex.Pattern.compile("(-?\\d+)").matcher(userText);
-        java.util.regex.Matcher numMatcher = java.util.regex.Pattern.compile("(-?\\d+(?:\\.\\d+)?)/").matcher(userText);
-        Integer foundInt = null;
-        Double foundNum = null;
-        if (intMatcher.find()) {
-            try {
-                foundInt = Integer.parseInt(intMatcher.group(1));
-            } catch (Exception ignored) {
-            }
-        }
-        if (foundNum == null) {
-            java.util.regex.Matcher dm = java.util.regex.Pattern.compile("(-?\\d+(?:\\.\\d+)?)").matcher(userText);
-            if (dm.find()) {
-                try {
-                    foundNum = Double.parseDouble(dm.group(1));
-                } catch (Exception ignored) {
-                }
-            }
-        }
+        // Which required numeric fields are still missing?
+        List<String> missingNumeric = new ArrayList<>();
         for (String f : fields) {
-            if (args.has(f))
+            if (args.has(f) || !required.contains(f))
                 continue;
-            JsonNode prop = properties.get(f);
-            String type = prop.path("type").asText("STRING");
-            try {
-                switch (type) {
-                    case "INTEGER" -> {
-                        if (foundInt != null)
-                            args.put(f, foundInt);
-                    }
-                    case "NUMBER" -> {
-                        if (foundNum != null)
-                            args.put(f, foundNum);
-                    }
-                }
-            } catch (Exception e) {
-                log.debug("Numeric fallback parse failed for field {}: {}", f, e.getMessage());
-            }
+            String type = properties.get(f).path("type").asText("STRING");
+            if ("INTEGER".equals(type) || "NUMBER".equals(type))
+                missingNumeric.add(f);
+        }
+        if (missingNumeric.size() != 1)
+            return; // 0 = nothing to do; >1 = ambiguous, let the orchestrator re-ask
+        String field = missingNumeric.get(0);
+        String type = properties.get(field).path("type").asText("STRING");
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("INTEGER".equals(type) ? "(-?\\d+)" : "(-?\\d+(?:\\.\\d+)?)")
+                .matcher(userText);
+        if (!m.find())
+            return;
+        try {
+            if ("INTEGER".equals(type))
+                args.put(field, Integer.parseInt(m.group(1)));
+            else
+                args.put(field, Double.parseDouble(m.group(1)));
+        } catch (Exception e) {
+            log.debug("Numeric fallback parse failed for field {}: {}", field, e.getMessage());
         }
     }
 

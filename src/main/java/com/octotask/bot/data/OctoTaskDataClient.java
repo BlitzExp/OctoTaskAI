@@ -35,6 +35,16 @@ public interface OctoTaskDataClient {
      */
     Integer    getLatestSprintIdForUser(int userId);
 
+    /** The id of a team's most recent sprint (highest sprint number), or {@code null}. */
+    Integer    getLatestSprintIdForTeam(int teamId);
+
+    /**
+     * Translate a human-facing sprint <em>number</em> (what users say, e.g. "sprint 3")
+     * into its internal id within the given team, or {@code null} if that team has no
+     * such sprint. Users never know the internal id.
+     */
+    Integer    getSprintIdByNumber(int teamId, int sprintNumber);
+
     List<Map<String, Object>> getTeamMembers(long teamId);
 
     int        getLateTasksBySprint(int teamId, int sprintId);

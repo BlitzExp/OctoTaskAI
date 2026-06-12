@@ -109,6 +109,22 @@ public class JdbcOctoTaskDataClient implements OctoTaskDataClient {
     }
 
     @Override
+    public Integer getLatestSprintIdForTeam(int teamId) {
+        String sql = "SELECT id FROM SPRINT WHERE team_id = ? " +
+                "ORDER BY sprint_num DESC, end_date DESC FETCH FIRST 1 ROWS ONLY";
+        List<Integer> ids = jdbc.query(sql, (rs, n) -> rs.getInt("id"), teamId);
+        return ids.isEmpty() ? null : ids.get(0);
+    }
+
+    @Override
+    public Integer getSprintIdByNumber(int teamId, int sprintNumber) {
+        String sql = "SELECT id FROM SPRINT WHERE team_id = ? AND sprint_num = ? " +
+                "FETCH FIRST 1 ROWS ONLY";
+        List<Integer> ids = jdbc.query(sql, (rs, n) -> rs.getInt("id"), teamId, sprintNumber);
+        return ids.isEmpty() ? null : ids.get(0);
+    }
+
+    @Override
     public List<Map<String, Object>> getTeamMembers(long teamId) {
         String sql = "SELECT ID AS \"id\", NAME AS \"name\" FROM APP_USER WHERE TEAM_ID = ?";
         return jdbc.queryForList(sql, teamId);
