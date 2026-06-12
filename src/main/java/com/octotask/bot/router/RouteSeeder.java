@@ -16,12 +16,18 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * One-time seeder: populates {@code rutas_semanticas} with example phrasings for
- * each bot tool (funcion_backend = the tool's name). The semantic router matches
- * a user's message against these to choose a tool. Runs only when the table is
- * empty, so it is safe to leave enabled.
+ * Seeder: populates {@code rutas_semanticas} with example phrasings for each bot
+ * tool (funcion_backend = the tool's name). The semantic router matches a user's
+ * message against these to choose a tool.
  *
- * Enable with bot.router.seed-on-startup=true (BOT_ROUTER_SEED=true).
+ * <p>Seeding is <em>incremental</em>: it only inserts phrasings for tools that
+ * have no routes yet. This is what lets a tool added after the first seed (e.g.
+ * {@code get_daily_briefing}) get picked up on the next run, instead of being
+ * silently un-routable because the table was already non-empty. Tools that
+ * already have routes are left untouched, so there is no routing downtime.
+ *
+ * <p>Enable with bot.router.seed-on-startup=true (BOT_ROUTER_SEED=true). Set
+ * bot.router.reset=true to wipe and fully reseed (clears stale/polluted rows).
  */
 @Component
 @ConditionalOnBean(SemanticRoutingRepository.class)
@@ -101,20 +107,24 @@ public class RouteSeeder implements ApplicationRunner {
                 log.warn("Route reset failed; continuing: {}", e.getMessage());
             }
         }
+        java.util.Set<String> alreadySeeded;
         try {
-            long existing = repo.count();
-            if (existing > 0) {
-                log.info("rutas_semanticas already has {} rows; skipping seed", existing);
-                return;
-            }
+            alreadySeeded = repo.distinctBackends();
         } catch (Exception e) {
-            log.warn("Could not check rutas_semanticas count; skipping seed: {}", e.getMessage());
+            log.warn("Could not read existing routes; skipping seed: {}", e.getMessage());
             return;
         }
 
         int inserted = 0;
+        int toolsSeeded = 0;
         for (Map.Entry<String, List<String>> entry : SEED.entrySet()) {
             String tool = entry.getKey();
+            // Incremental: skip tools that already have routes so we never
+            // duplicate, and so a newly added tool is filled in on the next run.
+            if (alreadySeeded.contains(tool)) {
+                log.debug("Routes for '{}' already present; skipping", tool);
+                continue;
+            }
             for (String phrase : entry.getValue()) {
                 try {
                     float[] vec = embeddings.embed(List.of(phrase)).get(0);
@@ -124,7 +134,13 @@ public class RouteSeeder implements ApplicationRunner {
                     log.error("Failed to seed route '{}' -> {}", phrase, tool, e);
                 }
             }
+            toolsSeeded++;
+            log.info("Seeded routes for tool '{}'", tool);
         }
-        log.info("Seeded {} semantic routes across {} tools", inserted, SEED.size());
+        if (inserted == 0) {
+            log.info("All {} tools already have routes; nothing to seed", SEED.size());
+        } else {
+            log.info("Seeded {} semantic routes across {} newly added tool(s)", inserted, toolsSeeded);
+        }
     }
 }

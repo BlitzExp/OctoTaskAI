@@ -13,6 +13,6 @@ data:
   DRIVER_CLASS_NAME: "oracle.jdbc.OracleDriver"
   DB2_DRIVER_CLASS_NAME: "oracle.jdbc.OracleDriver"
 
-  BOT_ROUTER_SEED: "false"
+  BOT_ROUTER_SEED: "true"
   BOT_LOGIN_CODES_SEED: "false"
   BOT_MEMORY_MAX_CHARS: "200"

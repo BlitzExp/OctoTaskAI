@@ -67,6 +67,12 @@ public class SemanticRoutingRepository {
         return n == null ? 0 : n;
     }
 
+    /** The distinct tool names ({@code funcion_backend}) that already have at least one route. */
+    public java.util.Set<String> distinctBackends() {
+        return new java.util.HashSet<>(
+                jdbc.queryForList("SELECT DISTINCT funcion_backend FROM rutas_semanticas", String.class));
+    }
+
     /** Remove every route. Used by the reset-and-reseed path. Returns rows deleted. */
     public int deleteAll() {
         return jdbc.update("DELETE FROM rutas_semanticas");
